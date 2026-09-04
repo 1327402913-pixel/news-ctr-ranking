@@ -231,6 +231,47 @@ def expand_candidates(behaviors: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame.from_records(records)
 
 
+def expand_scoring_candidates(behaviors: pd.DataFrame) -> pd.DataFrame:
+    """Expand behavior rows for inference without requiring click labels."""
+
+    required = {"impression_id", "user_id", "impression_time", "article_ids_inview"}
+    missing = sorted(required - set(behaviors.columns))
+    if missing:
+        raise DataContractError(
+            f"behaviors are missing required scoring columns: {', '.join(missing)}"
+        )
+    if behaviors.empty:
+        raise DataContractError("behaviors for scoring must not be empty")
+
+    records: list[dict[str, Any]] = []
+    source_columns = [
+        column
+        for column in behaviors.columns
+        if column not in {"article_ids_inview", "article_ids_clicked"}
+    ]
+    for row in behaviors.to_dict("records"):
+        inview = _as_list(row["article_ids_inview"], field="article_ids_inview")
+        if not inview:
+            raise DataContractError(
+                f"impression {row['impression_id']} has an empty article_ids_inview list"
+            )
+        if len(inview) != len(set(inview)):
+            raise DataContractError(
+                f"impression {row['impression_id']} contains duplicate in-view articles"
+            )
+        base = {column: row[column] for column in source_columns}
+        for position, article_id in enumerate(inview):
+            records.append(
+                {
+                    **base,
+                    "article_id": article_id,
+                    "candidate_position": position,
+                    "candidate_count": len(inview),
+                }
+            )
+    return pd.DataFrame.from_records(records)
+
+
 def temporal_split(
     frame: pd.DataFrame, *, valid_fraction: float = 0.2
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -348,7 +389,17 @@ def write_synthetic_bundle(
     behaviors.iloc[:split_at].to_parquet(root / "train" / "behaviors.parquet", index=False)
     behaviors.iloc[split_at:].to_parquet(root / "validation" / "behaviors.parquet", index=False)
     (root / "dataset.json").write_text(
-        json.dumps({"source": "synthetic", "seed": seed}, sort_keys=True) + "\n",
+        json.dumps(
+            {
+                "source": "synthetic",
+                "seed": seed,
+                "users": n_users,
+                "articles": n_articles,
+                "impressions": n_impressions,
+            },
+            sort_keys=True,
+        )
+        + "\n",
         encoding="utf-8",
     )
     return root

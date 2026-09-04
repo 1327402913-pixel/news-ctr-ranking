@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import platform
 import sys
+from contextlib import suppress
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
 
@@ -12,11 +15,13 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import log_loss
 
+from news_ctr.benchmarking import BenchmarkConfig, run_benchmark
 from news_ctr.data import (
     DataContractError,
     DatasetBundle,
     audit_bundle,
     expand_candidates,
+    expand_scoring_candidates,
     load_bundle,
     temporal_split,
     write_synthetic_bundle,
@@ -24,6 +29,13 @@ from news_ctr.data import (
 from news_ctr.features import NewsFeatureBuilder
 from news_ctr.metrics import ranking_metrics
 from news_ctr.models import feature_importance, fit_model, predict_scores
+from news_ctr.persistence import (
+    SAVED_RANKER_SCHEMA_VERSION,
+    SavedRanker,
+    load_ranker,
+    rank_candidates,
+    save_ranker,
+)
 from news_ctr.reporting import dataset_fingerprint, write_run_artifacts
 
 
@@ -57,6 +69,23 @@ def build_parser() -> argparse.ArgumentParser:
     train.add_argument("--text-components", type=int, default=32)
     train.add_argument("--valid-fraction", type=float, default=0.2)
     train.set_defaults(handler=_train)
+
+    rank = subparsers.add_parser("rank", help="score candidates with a trusted saved ranker")
+    rank.add_argument("--model", type=Path, required=True)
+    rank.add_argument("--candidates", type=Path, required=True)
+    rank.add_argument("--output", type=Path, required=True)
+    rank.add_argument("--top-k", type=int)
+    rank.set_defaults(handler=_rank)
+
+    benchmark = subparsers.add_parser("benchmark", help="compare ranking baselines and models")
+    benchmark.add_argument("--data", type=Path, required=True)
+    benchmark.add_argument("--output", type=Path, required=True)
+    benchmark.add_argument("--models", default="position,popularity,logistic")
+    benchmark.add_argument("--bootstrap-samples", type=int, default=200)
+    benchmark.add_argument("--seed", type=int, default=42)
+    benchmark.add_argument("--text-components", type=int, default=32)
+    benchmark.add_argument("--valid-fraction", type=float, default=0.2)
+    benchmark.set_defaults(handler=_benchmark)
     return parser
 
 
@@ -87,6 +116,49 @@ def _make_synthetic(args: argparse.Namespace) -> int:
 def _audit(args: argparse.Namespace) -> int:
     summary = audit_bundle(load_bundle(args.data, split=args.split))
     print(json.dumps(summary, sort_keys=True))
+    return 0
+
+
+def _rank(args: argparse.Namespace) -> int:
+    ranker = load_ranker(args.model)
+    candidates = pd.read_parquet(args.candidates)
+    if "article_ids_inview" in candidates:
+        candidates = expand_scoring_candidates(candidates)
+    ranked = rank_candidates(ranker, candidates, top_k=args.top_k)
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    ranked.to_parquet(args.output, index=False)
+    print(
+        json.dumps(
+            {
+                "candidates": len(ranked),
+                "impressions": int(ranked["impression_id"].nunique(dropna=False)),
+                "output": str(args.output),
+            },
+            sort_keys=True,
+        )
+    )
+    return 0
+
+
+def _benchmark(args: argparse.Namespace) -> int:
+    raw_models = args.models.split(",")
+    models = tuple(name.strip() for name in raw_models)
+    if not models or any(not name for name in models):
+        raise ValueError("models must be a comma-separated list without blank names")
+    if len(models) != len(set(models)):
+        raise ValueError("benchmark model list contains a duplicate model")
+    output = run_benchmark(
+        BenchmarkConfig(
+            data=args.data,
+            output=args.output,
+            models=models,
+            bootstrap_samples=args.bootstrap_samples,
+            text_components=args.text_components,
+            valid_fraction=args.valid_fraction,
+            seed=args.seed,
+        )
+    )
+    print(json.dumps({"models": list(models), "output": str(output)}, sort_keys=True))
     return 0
 
 
@@ -173,6 +245,29 @@ def _train(args: argparse.Namespace) -> int:
         predictions=predictions,
         importance=importance,
         run_config=config,
+    )
+    library_versions = {
+        "python": platform.python_version(),
+        "scikit-learn": version("scikit-learn"),
+    }
+    with suppress(PackageNotFoundError):
+        library_versions["lightgbm"] = version("lightgbm")
+    save_ranker(
+        args.output,
+        SavedRanker(
+            schema_version=SAVED_RANKER_SCHEMA_VERSION,
+            model=model,
+            feature_builder=feature_builder,
+            feature_names=tuple(feature_builder.feature_names_),
+            metadata={
+                "dataset": valid_bundle.source_name,
+                "dataset_fingerprint": config["dataset_fingerprint"],
+                "model": args.model,
+                "seed": args.seed,
+                "library_versions": library_versions,
+                "training_config": config,
+            },
+        ),
     )
     print(
         json.dumps(

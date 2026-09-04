@@ -9,6 +9,8 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import roc_auc_score
 
+RANKING_METRICS = ("group_auc", "mrr", "ndcg@5", "ndcg@10")
+
 
 def ranking_metrics(
     labels: Sequence[int] | np.ndarray,

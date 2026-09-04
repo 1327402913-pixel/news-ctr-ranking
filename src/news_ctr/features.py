@@ -296,3 +296,53 @@ class NewsFeatureBuilder:
             return float(value)
         except (TypeError, ValueError):
             return float("nan")
+
+
+FEATURE_GROUPS: dict[str, tuple[str, ...]] = {
+    "context": (
+        "hour_sin",
+        "hour_cos",
+        "weekday_sin",
+        "weekday_cos",
+        "device_type",
+        "is_sso_user",
+        "is_subscriber",
+        "candidate_position",
+        "candidate_count",
+    ),
+    "article": (
+        "publication_age_hours",
+        "freshness_log_hours",
+        "title_length",
+        "subtitle_length",
+        "category_code",
+        "premium",
+        "article_type_code",
+        "sentiment_score",
+    ),
+    "personalization": ("history_length", "category_affinity"),
+    "semantic": ("text_similarity", "recent_text_similarity"),
+}
+
+
+def select_feature_names(
+    *,
+    include_groups: Sequence[str] | None = None,
+    exclude_groups: Sequence[str] = (),
+) -> list[str]:
+    """Select model features by auditable, named feature groups."""
+    requested = set(FEATURE_GROUPS if include_groups is None else include_groups)
+    excluded = set(exclude_groups)
+    unknown = sorted((requested | excluded) - set(FEATURE_GROUPS))
+    if unknown:
+        raise ValueError(f"unknown feature groups: {', '.join(unknown)}")
+
+    selected_groups = requested - excluded
+    names = [
+        name
+        for name in NewsFeatureBuilder.feature_names_
+        if any(name in FEATURE_GROUPS[group] for group in selected_groups)
+    ]
+    if not names:
+        raise ValueError("feature selection must not be empty")
+    return names
