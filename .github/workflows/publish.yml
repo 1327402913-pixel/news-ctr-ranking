@@ -816,7 +816,7 @@ jobs:
           /v1ZyOyQqtOpPE/5bUOt+ysAslsM5Fv6v/SVmSwRenYaNrpBis0EDfMs
           BUNDLE
           git bundle verify /tmp/news-ctr-ranking.bundle
-          git clone /tmp/news-ctr-ranking.bundle /tmp/project
+          git clone -b main /tmp/news-ctr-ranking.bundle /tmp/project
 
       - name: Verify project
         shell: bash
