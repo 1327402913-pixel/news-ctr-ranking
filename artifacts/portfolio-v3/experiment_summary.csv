@@ -1,0 +1,3 @@
+variant,units,click_mean,dwell_seconds_mean,latency_ms_mean
+control,10062,0.1216457961,48.0841386404,120.0044406679
+treatment,9938,0.1418796539,48.4966150131,122.9389763534

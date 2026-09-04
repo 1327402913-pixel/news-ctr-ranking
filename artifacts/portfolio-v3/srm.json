@@ -1,0 +1,13 @@
+{
+  "expected_counts": {
+    "control": 10000.0,
+    "treatment": 10000.0
+  },
+  "observed_counts": {
+    "control": 10062,
+    "treatment": 9938
+  },
+  "p_value": 0.3805885381012786,
+  "passed": true,
+  "statistic": 0.7688
+}

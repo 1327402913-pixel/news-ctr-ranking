@@ -2,8 +2,9 @@
 
 [![CI](https://github.com/1327402913-pixel/news-ctr-ranking/actions/workflows/publish.yml/badge.svg)](https://github.com/1327402913-pixel/news-ctr-ranking/actions/workflows/publish.yml)
 
-Leakage-safe news recommendation benchmark with temporal validation, personalized
-content features, learning-to-rank, uncertainty estimates, and reusable batch scoring.
+End-to-end decision-science case study for a news product: DuckDB metric analysis,
+leakage-safe recommendation ranking, randomized experimentation, causal effect
+estimation, and a predeclared launch decision.
 
 > **Evidence boundary:** every number shown below comes from deterministic synthetic
 > data. It proves that the engineering and evaluation workflow runs end to end; it is
@@ -11,8 +12,9 @@ content features, learning-to-rank, uncertainty estimates, and reusable batch sc
 
 ## 60-second project tour
 
-**Business question:** given a user, their prior reading history, the request context,
-and the articles shown in one impression, which candidate should rank first?
+**Business questions:** which article should rank first for this impression, and does a
+new ranking treatment create enough incremental value to launch without harming
+engagement or latency?
 
 The repository turns nested EB-NeRD-shaped Parquet logs into one auditable experiment:
 
@@ -24,7 +26,66 @@ The repository turns nested EB-NeRD-shaped Parquet logs into one auditable exper
    LambdaRank on the same validation impressions;
 5. report group AUC, MRR, NDCG, paired 95% bootstrap intervals, ablations, segments,
    exposure-bias diagnostics, latency, and model size;
-6. save a versioned ranker and use it for label-free batch Top-K scoring.
+6. summarize product KPIs and segments through reviewed DuckDB SQL;
+7. size and validate a user-randomized experiment, estimate ITT and CUPED effects,
+   check guardrails, and apply a predeclared launch rule;
+8. save a versioned ranker and use it for label-free batch Top-K scoring.
+
+## Decision Science V3: from metric to launch decision
+
+The V3 layer answers a question that offline model scores cannot: **if the new ranking
+experience were randomized, would the evidence justify launch?** The committed run is
+a deterministic 20,000-user synthetic RCT used to prove the analysis workflow. It is
+**not production lift**.
+
+### Product metric layer
+
+The SQL layer exposes numerators and denominators, runs data-quality checks, builds an
+exposure funnel, and reports device, position, slate-size, history, and freshness
+segments. On the fixed synthetic validation slice:
+
+| KPI | Value | Definition |
+| --- | ---: | --- |
+| Active users | 30 | Distinct users with a validation impression |
+| Impressions | 36 | Distinct recommendation requests |
+| Candidate exposures | 216 | Articles shown across those requests |
+| Clicks | 36 | Clicked candidate rows |
+| Candidate CTR | 16.67% | Clicks / candidate exposures |
+
+See the [SQL analytics report](artifacts/portfolio-v3/analytics_report.md),
+[segment table](artifacts/portfolio-v3/segment_kpis.csv), and the reviewed queries in
+[`src/news_ctr/sql`](src/news_ctr/sql).
+
+### Randomized experiment evidence
+
+| Check | Result | Decision interpretation |
+| --- | ---: | --- |
+| Sample ratio mismatch | p = 0.3806 | Pass; allocation is compatible with 50/50 |
+| Raw click ITT | +2.02 pp, 95% CI [1.09, 2.96] | Positive user-level treatment effect |
+| CUPED click ITT | +2.05 pp, 95% CI [1.12, 2.98] | Lower-variance predeclared estimate |
+| Dwell-time guardrail | +0.41 s, 95% CI [-0.14, 0.97] | Passes the -2 s margin |
+| Latency guardrail | +2.93 ms, 95% CI [2.60, 3.27] | Passes the +8 ms margin |
+
+![Treatment effects with 95% confidence intervals](artifacts/portfolio-v3/effects.png)
+
+The deterministic policy returns **`launch`** because SRM passes, the CUPED lower
+confidence bound exceeds the predeclared +0.8 percentage-point practical threshold,
+and both non-inferiority guardrails pass. This is a validation of decision logic on
+synthetic randomized data—not a recommendation to deploy a real product. Read the
+[full decision report](artifacts/portfolio-v3/decision_report.md) and
+[launch memo](docs/launch-decision.md). The
+[run manifest](artifacts/portfolio-v3/run_manifest.json) pins SHA-256 hashes for the
+input, metadata, and exact copied experiment configuration.
+
+### Why this fits a data-science role
+
+| Background signal | Evidence in this repository |
+| --- | --- |
+| Mathematics | Power calculation, uncertainty intervals, SRM chi-square test |
+| Economics | Incremental-effect estimand, practical threshold, explicit launch trade-offs |
+| Statistics / data science | SQL KPI contracts, ITT, CUPED, guardrails, Holm multiplicity control |
+| Machine learning | Leakage-safe features, ranking baselines, LambdaRank, grouped evaluation |
+| Production judgment | Validated CLIs, atomic artifacts, deterministic fixtures, CI release gates |
 
 ### Latest reproducible synthetic evidence
 
@@ -79,6 +140,9 @@ evidence for them beyond the correlated features already present.
 - Productized the offline workflow as a tested CLI with schema audits, atomic benchmark
   publication, versioned model artifacts, deterministic Top-K batch inference, and CI
   across Python 3.10–3.12 plus LightGBM on Linux.
+- Built a reproducible decision-science layer with DuckDB KPI queries and a user-level
+  randomized-experiment pipeline covering power, SRM, ITT, CUPED, non-inferiority
+  guardrails, exploratory segments, and a predeclared launch policy.
 
 ## Architecture
 
@@ -97,6 +161,10 @@ flowchart LR
     J --> K[Atomic report and run artifacts]
     G --> L[Versioned saved ranker]
     L --> M[Batch Top-K scoring]
+    B --> N[DuckDB KPI and segment layer]
+    O[User-randomized experiment] --> P[SRM + ITT + CUPED]
+    P --> Q[Guardrails + heterogeneous effects]
+    Q --> R[Predeclared launch decision]
 ```
 
 The implementation is ordinary Python rather than notebook-only state. Metric tables
@@ -110,7 +178,7 @@ Python 3.10 or newer is required.
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-python -m pip install -e ".[dev]"
+python -m pip install -e ".[dev,decision]"
 
 news-ctr make-synthetic --output data/synthetic --seed 42
 news-ctr audit --data data/synthetic --split train
@@ -120,11 +188,31 @@ news-ctr benchmark \
   --models position,popularity,logistic \
   --bootstrap-samples 200 \
   --seed 42
+
+news-ctr analyze \
+  --data data/synthetic \
+  --output artifacts/analytics-v3
+
+news-ctr experiment-design \
+  --baseline-rate 0.12 \
+  --relative-mde 0.10 \
+  --daily-units 5000
+
+news-ctr make-experiment \
+  --output data/synthetic-rct.parquet \
+  --seed 42 \
+  --users 20000
+
+news-ctr experiment \
+  --input data/synthetic-rct.parquet \
+  --output artifacts/experiment-v3 \
+  --config configs/experiment-v3.json
 ```
 
-The same core workflow is available as `make benchmark`. The destination must not
-already exist; this protects completed evidence from accidental overwrite. Set
-`CORE_BENCHMARK_OUTPUT=...` when you want a different output path.
+The same workflows are available as `make benchmark`, `make analytics`, `make
+experiment`, and `make portfolio-v3`. Destinations must not already exist; this
+protects completed evidence from accidental overwrite. The portfolio target writes a
+fresh comparison copy to `artifacts/portfolio-v3-regenerated/`.
 
 ### Include LambdaRank
 
@@ -224,6 +312,11 @@ real-data run.
 ```text
 src/news_ctr/
 ├── data.py          # contracts, audit, expansion, temporal split, synthetic fixture
+├── analytics.py     # DuckDB SQL orchestration and denominator-aware reports
+├── experiment_data.py # deterministic user-randomized teaching fixture
+├── experiments.py   # power, SRM, ITT, CUPED, segments, atomic experiment workflow
+├── decisioning.py   # guardrail evaluation and predeclared launch policy
+├── visualization.py # deterministic effect plots
 ├── features.py      # leakage-aware transformations and feature-group registry
 ├── baselines.py     # position and training-only smoothed popularity
 ├── models.py        # logistic and optional LightGBM adapters
@@ -232,9 +325,10 @@ src/news_ctr/
 ├── persistence.py   # versioned trusted ranker and batch scoring
 ├── benchmarking.py  # shared orchestration and atomic publication
 ├── reporting.py     # model cards and self-contained benchmark report
-└── cli.py           # make-synthetic, audit, train, rank, benchmark
+└── cli.py           # ranking, analytics, design, and experiment commands
 tests/               # behavior-focused unit and integration tests
 artifacts/portfolio-v2/  # committed aggregate synthetic evidence
+artifacts/portfolio-v3/  # committed SQL and randomized decision evidence
 docs/                # data contract and experiment protocol
 ```
 
@@ -248,12 +342,12 @@ docs/                # data contract and experiment protocol
   of scope until a licensed real-data baseline is established.
 - Offline metrics do not optimize diversity, novelty, fairness, editorial value, or
   online business outcomes.
-- Validation-time evolving history, inverse-propensity correction, calibration, and
-  online A/B testing remain future work.
+- Validation-time evolving history, inverse-propensity correction, calibration, and a
+  real online A/B test remain future work.
 
 ## 中文简介
 
-这是一个面向数据分析、机器学习和推荐算法求职的新闻排序项目。它不仅训练模型，还展示数据契约、严格时间切分、训练集统计基线、Learning to Rank、曝光组级置信区间、特征消融、分群诊断、模型持久化、批量 Top-K 推理与 CI。仓库中的成绩来自合成数据，只能证明工程链路可复现，不能作为真实 EB-NeRD 或线上业务效果。
+这是一个面向大厂数据科学岗位的端到端新闻推荐决策项目。除了数据契约、严格时间切分、Learning to Rank、曝光组级置信区间、特征消融和批量 Top-K 推理，它还展示 DuckDB 指标分析、实验样本量设计、SRM、用户级 ITT、CUPED、护栏指标、分群效应和预先声明的上线规则。仓库中的成绩来自合成数据，只能证明分析与工程链路可复现，不能作为真实 EB-NeRD 结果或线上业务提升。
 
 ## License and attribution
 

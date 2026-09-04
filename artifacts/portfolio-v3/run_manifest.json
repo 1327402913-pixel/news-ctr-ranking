@@ -1,0 +1,29 @@
+{
+  "allocation": {
+    "control": 10062,
+    "treatment": 9938
+  },
+  "analysis_contract": {
+    "alpha": 0.05,
+    "cuped_covariate": "pre_ctr",
+    "guardrail_metrics": [
+      "dwell_seconds",
+      "latency_ms"
+    ],
+    "practical_threshold": 0.008,
+    "primary_metric": "click"
+  },
+  "config": {
+    "sha256": "43803defb446aac85c2dd7a4957a66f68b0029bf1a0892f91ede34cd4045251d"
+  },
+  "evidence_tier": "synthetic-rct",
+  "input": {
+    "sha256": "441561c3c8ae22c17b6c6ca0f025235bf34ede419ff708484e4978d227e775a5"
+  },
+  "metadata": {
+    "sha256": "e5e304183f0094c75d24d89da400b9c23651dbfec36686f8c10bc1dc78a083d5"
+  },
+  "randomization_unit": "user_id",
+  "schema_version": 1,
+  "units": 20000
+}

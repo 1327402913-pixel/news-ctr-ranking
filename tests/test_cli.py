@@ -5,6 +5,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from news_ctr.cli import main
 from news_ctr.data import expand_candidates, load_bundle
@@ -198,3 +199,75 @@ def test_benchmark_cli_creates_the_declared_report(tmp_path: Path, capsys) -> No
     assert payload["output"] == str(output)
     assert payload["models"] == ["position", "popularity", "logistic"]
     assert (output / "benchmark_report.md").is_file()
+
+
+def test_decision_science_cli_end_to_end(tmp_path: Path, capsys) -> None:
+    pytest.importorskip("duckdb")
+    pytest.importorskip("matplotlib")
+    dataset = tmp_path / "ranking"
+    experiment = tmp_path / "experiment.parquet"
+    config = Path(__file__).parents[1] / "configs" / "experiment-v3.json"
+
+    assert main(["make-synthetic", "--output", str(dataset), "--seed", "42"]) == 0
+    assert (
+        main(
+            [
+                "analyze",
+                "--data",
+                str(dataset),
+                "--output",
+                str(tmp_path / "analytics"),
+            ]
+        )
+        == 0
+    )
+    assert (
+        main(
+            [
+                "experiment-design",
+                "--baseline-rate",
+                "0.12",
+                "--relative-mde",
+                "0.10",
+                "--daily-units",
+                "5000",
+            ]
+        )
+        == 0
+    )
+    design = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert design["absolute_mde"] == 0.012
+    assert design["total_units"] == 2 * design["units_per_arm"]
+    assert design["estimated_days"] >= 1
+
+    assert (
+        main(
+            [
+                "make-experiment",
+                "--output",
+                str(experiment),
+                "--seed",
+                "42",
+                "--users",
+                "20000",
+            ]
+        )
+        == 0
+    )
+    study = tmp_path / "study"
+    assert (
+        main(
+            [
+                "experiment",
+                "--input",
+                str(experiment),
+                "--output",
+                str(study),
+                "--config",
+                str(config),
+            ]
+        )
+        == 0
+    )
+    assert (study / "decision_report.md").is_file()
+    assert (study / "effects.png").is_file()

@@ -1,0 +1,7 @@
+segment,value,units,control_units,treatment_units,analysis_role,low_support,multiplicity_alpha,holm_adjusted_p_value,interval_method,significant,effect,standard_error,ci_lower,ci_upper,p_value
+device_type,desktop,6077,3024,3053,exploratory,False,,,pointwise,False,0.0224619682,0.0086031177,0.0056001674,0.0393237690,0.0090301589
+device_type,mobile,11934,6050,5884,exploratory,False,,,pointwise,False,0.0199594362,0.0062204405,0.0077675969,0.0321512754,0.0013334333
+device_type,tablet,1989,988,1001,exploratory,False,,,pointwise,False,0.0153793575,0.0151406185,-0.0142957095,0.0450544245,0.3097398242
+history_segment,heavy,6097,3119,2978,exploratory,False,,,pointwise,False,0.0081475977,0.0087201441,-0.0089435706,0.0252387660,0.3501274542
+history_segment,light,9987,5027,4960,exploratory,False,,,pointwise,False,0.0251741002,0.0067273857,0.0119886664,0.0383595339,0.0001825375
+history_segment,new,3916,1916,2000,exploratory,False,,,pointwise,False,0.0264582463,0.0108494388,0.0051937370,0.0477227557,0.0147412526

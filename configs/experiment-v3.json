@@ -1,0 +1,40 @@
+{
+  "alpha": 0.05,
+  "control_label": "control",
+  "cuped_covariate": "pre_ctr",
+  "expected_allocation": {
+    "control": 0.5,
+    "treatment": 0.5
+  },
+  "guardrails": [
+    {
+      "direction": "non_decrease",
+      "kind": "continuous",
+      "name": "dwell_seconds",
+      "non_inferiority_margin": -2.0
+    },
+    {
+      "direction": "non_increase",
+      "kind": "continuous",
+      "name": "latency_ms",
+      "non_inferiority_margin": 8.0
+    }
+  ],
+  "minimum_segment_units": 200,
+  "practical_threshold": 0.008,
+  "pre_treatment_columns": [
+    "pre_ctr"
+  ],
+  "primary": {
+    "direction": "increase",
+    "kind": "binary",
+    "name": "click"
+  },
+  "segment_columns": [
+    "device_type",
+    "history_segment"
+  ],
+  "treatment_label": "treatment",
+  "unit_column": "user_id",
+  "variant_column": "variant"
+}
