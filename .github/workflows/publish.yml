@@ -24,6 +24,7 @@ jobs:
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -e ".[dev]"
       - run: ruff check .
+      - run: ruff format --check .
       - run: python -m pytest -q
       - run: python -m build
 
@@ -37,6 +38,8 @@ jobs:
           cache: pip
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -e ".[dev,ranking]"
-      - run: python -m pytest tests/test_models.py -q
-      - run: news-ctr make-synthetic --output data/synthetic --seed 42
-      - run: news-ctr train --data data/synthetic --output artifacts/ranker --model lightgbm
+      - run: python -m pytest tests/test_models.py tests/test_benchmarking.py -q
+      - run: news-ctr make-synthetic --output data/synthetic --seed 42 --users 10 --articles 24 --impressions 40
+      - run: news-ctr benchmark --data data/synthetic --output artifacts/ci-benchmark --models position,popularity,logistic,lightgbm --bootstrap-samples 20 --text-components 4 --seed 42
+      - run: python -c "import pandas as pd; assert 'lightgbm' in set(pd.read_csv('artifacts/ci-benchmark/leaderboard.csv')['model'])"
+      - run: grep -q "not an EB-NeRD benchmark" artifacts/ci-benchmark/benchmark_report.md
