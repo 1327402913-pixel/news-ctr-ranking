@@ -1,0 +1,24 @@
+{
+  "dataset": "synthetic:validation",
+  "metrics": {
+    "auc_groups": 36,
+    "group_auc": 0.7611111111111112,
+    "groups": 36,
+    "log_loss": 0.6418073263474904,
+    "mrr": 0.6467592592592593,
+    "ndcg@10": 0.7344093023400675,
+    "ndcg@5": 0.7146200141673995,
+    "skipped_auc_groups": 0
+  },
+  "model": "logistic",
+  "split_summary": {
+    "articles": 80,
+    "candidates": 216,
+    "clicks": 36,
+    "end_time": "2026-01-17T11:00:00",
+    "impressions": 36,
+    "source_name": "synthetic:validation",
+    "start_time": "2026-01-16T00:00:00",
+    "users": 30
+  }
+}

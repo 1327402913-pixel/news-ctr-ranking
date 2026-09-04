@@ -1,0 +1,19 @@
+cff-version: 1.2.0
+message: "If you use this code, cite this repository and the EB-NeRD dataset paper."
+title: "News CTR Ranking"
+type: software
+version: 0.1.0
+date-released: 2026-08-27
+authors:
+  - name: "news-ctr-ranking contributors"
+references:
+  - type: conference-paper
+    title: "EB-NeRD: A Large-scale Dataset for News Recommendation"
+    authors:
+      - family-names: Kruse
+        given-names: Johannes
+      - family-names: Lindskow
+        given-names: Kasper
+    year: 2024
+    doi: "10.1145/3687151.3687152"
+license: MIT
