@@ -1,0 +1,6 @@
+model,segment,value,impressions,candidates,low_support,group_auc,mrr,ndcg@5,ndcg@10
+logistic,device_type,1,12,72,False,0.8166666667,0.6250000000,0.7212207307,0.7212207307
+logistic,device_type,2,12,72,False,0.8333333333,0.7361111111,0.8019343853,0.8019343853
+logistic,device_type,3,12,72,False,0.6666666667,0.6000000000,0.6373926929,0.6967605574
+logistic,candidate_count,medium,36,216,False,0.7722222222,0.6537037037,0.7201826029,0.7399718911
+logistic,history_length,short,36,216,False,0.7722222222,0.6537037037,0.7201826029,0.7399718911

@@ -1,0 +1,8 @@
+diagnostic,bucket,candidates,clicks,click_rate
+candidate_position,0,36,8,0.2222222222
+candidate_position,1,36,9,0.2500000000
+candidate_position,2,36,10,0.2777777778
+candidate_position,3,36,2,0.0555555556
+candidate_position,4,36,1,0.0277777778
+candidate_position,5,36,6,0.1666666667
+article_freshness,7d+,216,36,0.1666666667

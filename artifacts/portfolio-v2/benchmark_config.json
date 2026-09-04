@@ -1,0 +1,24 @@
+{
+  "bootstrap_samples": 200,
+  "data": "data/portfolio-v2",
+  "dataset": "synthetic:validation",
+  "dataset_fingerprint": "b3f4dedb235d441bb470464f2ce054a565ff1e777c29832127ec46fa5347b79c",
+  "models": [
+    "position",
+    "popularity",
+    "logistic",
+    "lightgbm"
+  ],
+  "output": "artifacts/portfolio-v2",
+  "seed": 42,
+  "synthetic_generation": {
+    "articles": 80,
+    "impressions": 180,
+    "seed": 42,
+    "users": 30
+  },
+  "text_components": 32,
+  "train_rows": 864,
+  "valid_fraction": 0.2,
+  "validation_rows": 216
+}
