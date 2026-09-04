@@ -12,3 +12,7 @@ dist/
 data/
 artifacts/*/predictions.parquet
 artifacts/*/run_config.json
+artifacts/portfolio-v2/runs/
+artifacts/**/model.joblib
+artifacts/**/model_metadata.json
+artifacts/.portfolio-v2.staging-*/
