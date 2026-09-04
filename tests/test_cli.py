@@ -7,6 +7,9 @@ import numpy as np
 import pandas as pd
 
 from news_ctr.cli import main
+from news_ctr.data import expand_candidates, load_bundle
+from news_ctr.models import predict_scores
+from news_ctr.persistence import load_ranker
 
 
 def test_cli_generates_audits_and_trains_reproducibly(tmp_path: Path, capsys) -> None:
@@ -59,6 +62,8 @@ def test_cli_generates_audits_and_trains_reproducibly(tmp_path: Path, capsys) ->
         "feature_importance.csv",
         "run_config.json",
         "model_card.md",
+        "model.joblib",
+        "model_metadata.json",
     }
     assert {item.name for item in first_output.iterdir()} == expected_artifacts
     metrics = json.loads((first_output / "metrics.json").read_text(encoding="utf-8"))
@@ -77,6 +82,61 @@ def test_cli_generates_audits_and_trains_reproducibly(tmp_path: Path, capsys) ->
         "score",
     ]
     pd.testing.assert_frame_equal(first_predictions, second_predictions)
+    restored = load_ranker(first_output)
+    run_config = json.loads((first_output / "run_config.json").read_text(encoding="utf-8"))
+    assert restored.metadata["training_config"] == run_config
+    assert restored.metadata["training_config"]["text_components"] == 4
+    assert restored.metadata["training_config"]["validation_rows"] == len(first_predictions)
+    valid_candidates = expand_candidates(load_bundle(data_path, split="validation").behaviors)
+    restored_scores = predict_scores(
+        restored.model,
+        restored.feature_builder.transform(valid_candidates)[list(restored.feature_names)],
+    )
+    np.testing.assert_allclose(restored_scores, first_predictions["score"])
+    label_free_behaviors = tmp_path / "label-free-behaviors.parquet"
+    pd.read_parquet(data_path / "validation" / "behaviors.parquet").drop(
+        columns="article_ids_clicked"
+    ).to_parquet(label_free_behaviors, index=False)
+    ranked_output = tmp_path / "ranked" / "candidates.parquet"
+    assert (
+        main(
+            [
+                "rank",
+                "--model",
+                str(first_output),
+                "--candidates",
+                str(label_free_behaviors),
+                "--output",
+                str(ranked_output),
+                "--top-k",
+                "3",
+            ]
+        )
+        == 0
+    )
+    ranked = pd.read_parquet(ranked_output)
+    assert ranked.groupby("impression_id").size().eq(3).all()
+    assert "label" not in ranked
+
+    malformed = tmp_path / "malformed.parquet"
+    valid_candidates.drop(columns="impression_time").to_parquet(malformed, index=False)
+    assert (
+        main(
+            [
+                "rank",
+                "--model",
+                str(first_output),
+                "--candidates",
+                str(malformed),
+                "--output",
+                str(tmp_path / "must-not-exist.parquet"),
+            ]
+        )
+        == 2
+    )
+    captured = capsys.readouterr()
+    assert "missing required scoring columns: impression_time" in captured.err
+    assert "Traceback" not in captured.err
     model_card = (first_output / "model_card.md").read_text(encoding="utf-8")
     assert "engineering smoke test" in model_card.lower()
     assert "not an EB-NeRD benchmark" in model_card
@@ -90,3 +150,51 @@ def test_cli_returns_nonzero_with_an_actionable_data_error(tmp_path: Path, capsy
 
     assert code == 2
     assert "dataset files not found" in capsys.readouterr().err
+
+
+def test_benchmark_cli_creates_the_declared_report(tmp_path: Path, capsys) -> None:
+    data = tmp_path / "data"
+    output = tmp_path / "benchmark"
+    assert (
+        main(
+            [
+                "make-synthetic",
+                "--output",
+                str(data),
+                "--seed",
+                "13",
+                "--users",
+                "10",
+                "--articles",
+                "24",
+                "--impressions",
+                "40",
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+
+    code = main(
+        [
+            "benchmark",
+            "--data",
+            str(data),
+            "--output",
+            str(output),
+            "--models",
+            "position, popularity,logistic",
+            "--bootstrap-samples",
+            "20",
+            "--text-components",
+            "4",
+            "--seed",
+            "13",
+        ]
+    )
+
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    assert payload["output"] == str(output)
+    assert payload["models"] == ["position", "popularity", "logistic"]
+    assert (output / "benchmark_report.md").is_file()

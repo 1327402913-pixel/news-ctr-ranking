@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from news_ctr.features import NewsFeatureBuilder
+from news_ctr.features import FEATURE_GROUPS, NewsFeatureBuilder, select_feature_names
 
 
 def _frames() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
@@ -135,3 +135,30 @@ def test_missing_boolean_and_text_values_are_not_treated_as_true_or_literal_nan(
     assert features.iloc[0]["title_length"] == 0
     assert features.iloc[0]["premium"] == pytest.approx(0.5)
     assert features.iloc[0]["is_sso_user"] == pytest.approx(0.5)
+
+
+def test_feature_groups_cover_every_feature_exactly_once() -> None:
+    """Catches a feature silently disappearing from portfolio ablations."""
+    grouped = [name for names in FEATURE_GROUPS.values() for name in names]
+
+    assert sorted(grouped) == sorted(NewsFeatureBuilder.feature_names_)
+    assert len(grouped) == len(set(grouped))
+
+
+def test_feature_selection_supports_inclusion_and_exclusion() -> None:
+    """Catches ablations retaining a feature group that was declared excluded."""
+    context = select_feature_names(include_groups=("context",))
+    no_semantic = select_feature_names(exclude_groups=("semantic",))
+
+    assert context == list(FEATURE_GROUPS["context"])
+    assert "candidate_position" in no_semantic
+    assert "text_similarity" not in no_semantic
+    assert "recent_text_similarity" not in no_semantic
+
+
+def test_feature_selection_rejects_unknown_or_empty_groups() -> None:
+    """Catches misspelled ablations being reported as valid experiments."""
+    with pytest.raises(ValueError, match="unknown feature groups: missing"):
+        select_feature_names(exclude_groups=("missing",))
+    with pytest.raises(ValueError, match="feature selection must not be empty"):
+        select_feature_names(exclude_groups=tuple(FEATURE_GROUPS))
