@@ -4,9 +4,11 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-from PIL import Image
 
 pytest.importorskip("matplotlib")
+pytest.importorskip("PIL.Image")
+
+from PIL import Image
 
 from news_ctr.visualization import write_effect_plot
 
