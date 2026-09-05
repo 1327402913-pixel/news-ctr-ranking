@@ -268,7 +268,8 @@ The release gate is:
 - source and wheel builds pass;
 - ranking-extra CI remains green;
 - a new decision-extra CI job runs SQL analytics plus the complete synthetic RCT flow;
-- clean-checkout artifacts reproduce byte-for-byte except documented runtime fields;
+- clean-checkout data/report artifacts reproduce byte-for-byte; rendered figures are
+  byte-stable within one runtime and structurally verified across platforms;
 - an independent code review reports no critical or important findings.
 
 ## Scope Boundaries

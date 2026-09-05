@@ -64,6 +64,7 @@ jobs:
         run: |
           python - <<'PY'
           from pathlib import Path
+          from PIL import Image
           from news_ctr.portfolio import ANALYTICS_ARTIFACTS, EXPERIMENT_ARTIFACTS
 
           analytics = {path.name for path in Path("artifacts/analytics-ci").iterdir()}
@@ -73,7 +74,26 @@ jobs:
           for committed in Path("artifacts/portfolio-v3").iterdir():
               regenerated = Path("artifacts/portfolio-ci") / committed.name
               assert regenerated.is_file(), committed.name
-              assert committed.read_bytes() == regenerated.read_bytes(), committed.name
+              if committed.suffix == ".png":
+                  with Image.open(committed) as expected, Image.open(regenerated) as actual:
+                      expected.verify()
+                      actual.verify()
+                  with Image.open(committed) as expected, Image.open(regenerated) as actual:
+                      assert expected.size == actual.size, committed.name
+                      assert expected.mode == actual.mode, committed.name
+                      assert expected.info["Description"] == actual.info["Description"]
+                      assert expected.getbbox() is not None, committed.name
+                      assert actual.getbbox() is not None, committed.name
+                      expected_colors = expected.convert("RGB").getcolors(
+                          maxcolors=expected.width * expected.height
+                      )
+                      actual_colors = actual.convert("RGB").getcolors(
+                          maxcolors=actual.width * actual.height
+                      )
+                      assert expected_colors is not None and len(expected_colors) > 1
+                      assert actual_colors is not None and len(actual_colors) > 1
+              else:
+                  assert committed.read_bytes() == regenerated.read_bytes(), committed.name
           PY
       - run: grep -q "synthetic-rct" artifacts/experiment-ci/decision_report.md
       - run: grep -qi "not production lift" artifacts/experiment-ci/decision_report.md

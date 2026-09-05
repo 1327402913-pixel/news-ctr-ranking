@@ -33,6 +33,7 @@ ranking = ["lightgbm>=4.5"]
 decision = [
   "duckdb>=1.1",
   "matplotlib>=3.9",
+  "pillow>=10",
   "scipy>=1.14",
 ]
 dev = [

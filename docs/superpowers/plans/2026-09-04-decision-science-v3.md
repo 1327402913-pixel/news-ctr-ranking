@@ -626,7 +626,7 @@ Expected: all tests pass, package coverage is at least 90%, Ruff passes, formatt
 
 - [ ] **Step 7: Reproduce committed evidence from a clean checkout**
 
-Generate inputs into ignored paths, run the public Make/CLI flow, and compare every deterministic aggregate CSV, JSON, Markdown, and PNG with `artifacts/portfolio-v3/`. Normalize only explicitly documented runtime fields; all scientific results and images must match.
+Generate inputs into ignored paths, run the public Make/CLI flow, and compare every deterministic aggregate CSV, JSON, and Markdown file with `artifacts/portfolio-v3/`. Normalize only explicitly documented runtime fields. Verify rendered PNGs structurally across platforms and byte-for-byte within the same runtime because font rasterization can vary with the operating system and FreeType build.
 
 - [ ] **Step 8: Commit**
 

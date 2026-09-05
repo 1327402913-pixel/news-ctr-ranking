@@ -18,7 +18,7 @@ def write_effect_plot(
     *,
     confidence_level: float = 0.95,
 ) -> Path:
-    """Write byte-stable, per-metric treatment-effect confidence intervals."""
+    """Write same-runtime byte-stable treatment-effect confidence intervals."""
 
     required = {"metric", "effect", "ci_lower", "ci_upper"}
     missing = sorted(required - set(effects.columns))
