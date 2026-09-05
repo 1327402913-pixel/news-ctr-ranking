@@ -1,5 +1,71 @@
 # Experiment protocol
 
+## Evidence tiers and permitted claims
+
+This repository keeps three evidence types separate:
+
+| Tier | Source | Supports | Does not support |
+| --- | --- | --- | --- |
+| `synthetic-observational` | Deterministic EB-NeRD-shaped ranking logs | Data contracts, SQL correctness, reproducibility, ranking workflow | Real ranking quality, causal lift |
+| `synthetic-rct` | Deterministic user-level randomized fixture | Power/SRM/ITT/CUPED/decision-code behavior | Production lift or external validity |
+| `licensed-ebnerd` | User-provided licensed public dataset | Aggregate offline ranking quality on the named split | Online causal impact |
+
+Reports display the tier and a claim boundary. Synthetic numbers must never be
+presented as EB-NeRD or production results.
+
+## Randomized decision protocol
+
+The committed [`experiment-v3.json`](../configs/experiment-v3.json) is the analysis
+contract. Randomization occurs once per `user_id`, with one outcome row per user and
+expected 50/50 allocation. The primary outcome is click; dwell time and latency are
+continuous non-inferiority guardrails. `pre_ctr` is explicitly recorded before
+treatment and is the only permitted CUPED covariate.
+
+Before estimating effects, the analyzer requires:
+
+- unique, non-null randomization units;
+- exactly the configured control and treatment arms;
+- finite configured outcomes and covariates;
+- binary values restricted to zero or one;
+- positive arm counts and no missing segment values;
+- an SRM chi-square test against the declared allocation.
+
+The primary estimand is the user-level intent-to-treat difference in means. The raw
+estimate uses a two-sided normal confidence interval with a Welch standard error.
+CUPED estimates one pooled coefficient from the pre-treatment covariate, transforms
+the outcome, and applies the same ITT calculation. It does not condition on treatment
+outcomes or post-treatment variables.
+
+Device and history-segment estimates are exploratory by default. Low-support cells
+remain visible rather than being silently dropped. If a segment column is declared
+confirmatory, Holm step-down adjusted p-values and rejection decisions control the
+family-wise error rate for zero-effect tests. Bonferroni simultaneous intervals are
+reported separately; exploratory cells retain pointwise intervals.
+
+The deterministic decision policy has four states:
+
+1. `invalid_experiment` when SRM or integrity checks fail;
+2. `launch` when the CUPED primary lower bound clears the practical threshold and all
+   guardrails pass;
+3. `do_not_launch` for a credibly harmful primary result or a failed guardrail;
+4. `continue_experiment` for intervals that cross a decision boundary.
+
+See the concise [launch memo](launch-decision.md) for the fixed synthetic run.
+
+Only `synthetic-rct` metadata is accepted by the current experiment-decision command.
+Observational evidence tiers are rejected before estimation. The sidecar unit,
+allocation, and row count must match the input frame and config. Each persisted run
+copies the exact predeclared config and records SHA-256 hashes for the Parquet input,
+metadata sidecar, and config.
+
+## Observational SQL protocol
+
+The DuckDB layer operates on observed recommendation exposures. Candidate CTR is
+defined as clicked candidate rows divided by candidate exposures. Segment outputs
+show `units` (distinct impressions), `candidates` (the exposure denominator), and
+`clicks` (the numerator), and flag small cells. These metrics are descriptive; no SQL
+slice is interpreted as a treatment effect.
+
 ## Research question
 
 Can leakage-safe context, article, history, and semantic features improve

@@ -30,6 +30,12 @@ dependencies = [
 
 [project.optional-dependencies]
 ranking = ["lightgbm>=4.5"]
+decision = [
+  "duckdb>=1.1",
+  "matplotlib>=3.9",
+  "pillow>=10",
+  "scipy>=1.14",
+]
 dev = [
   "build>=1.2",
   "pytest>=8.3",
@@ -46,6 +52,9 @@ Issues = "https://github.com/1327402913-pixel/news-ctr-ranking/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+news_ctr = ["sql/*.sql"]
 
 [tool.pytest.ini_options]
 addopts = "-ra"

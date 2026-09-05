@@ -86,6 +86,40 @@ def build_parser() -> argparse.ArgumentParser:
     benchmark.add_argument("--text-components", type=int, default=32)
     benchmark.add_argument("--valid-fraction", type=float, default=0.2)
     benchmark.set_defaults(handler=_benchmark)
+
+    analyze = subparsers.add_parser("analyze", help="run reproducible SQL product analytics")
+    analyze.add_argument("--data", type=Path, required=True)
+    analyze.add_argument("--output", type=Path, required=True)
+    analyze.add_argument("--split", choices=("train", "validation"), default="validation")
+    analyze.add_argument("--min-cell-count", type=int, default=5)
+    analyze.set_defaults(handler=_analyze)
+
+    experiment_design = subparsers.add_parser(
+        "experiment-design", help="size a two-arm binary-outcome experiment"
+    )
+    experiment_design.add_argument("--baseline-rate", type=float, required=True)
+    experiment_design.add_argument("--relative-mde", type=float, required=True)
+    experiment_design.add_argument("--alpha", type=float, default=0.05)
+    experiment_design.add_argument("--power", type=float, default=0.80)
+    experiment_design.add_argument("--daily-units", type=int)
+    experiment_design.set_defaults(handler=_experiment_design)
+
+    make_experiment = subparsers.add_parser(
+        "make-experiment", help="create a deterministic randomized teaching fixture"
+    )
+    make_experiment.add_argument("--output", type=Path, required=True)
+    make_experiment.add_argument("--seed", type=int, default=42)
+    make_experiment.add_argument("--users", type=int, default=20_000)
+    make_experiment.add_argument("--corrupt-allocation", action="store_true")
+    make_experiment.set_defaults(handler=_make_experiment)
+
+    experiment = subparsers.add_parser(
+        "experiment", help="analyze randomized evidence and make a launch decision"
+    )
+    experiment.add_argument("--input", type=Path, required=True)
+    experiment.add_argument("--output", type=Path, required=True)
+    experiment.add_argument("--config", type=Path, required=True)
+    experiment.set_defaults(handler=_experiment)
     return parser
 
 
@@ -159,6 +193,74 @@ def _benchmark(args: argparse.Namespace) -> int:
         )
     )
     print(json.dumps({"models": list(models), "output": str(output)}, sort_keys=True))
+    return 0
+
+
+def _analyze(args: argparse.Namespace) -> int:
+    from news_ctr.analytics import AnalyticsConfig, run_analytics
+
+    output = run_analytics(
+        AnalyticsConfig(
+            data=args.data,
+            output=args.output,
+            split=args.split,
+            min_cell_count=args.min_cell_count,
+        )
+    )
+    print(json.dumps({"output": str(output), "split": args.split}, sort_keys=True))
+    return 0
+
+
+def _experiment_design(args: argparse.Namespace) -> int:
+    from news_ctr.experiments import ExperimentDesign, required_sample_size
+
+    if args.relative_mde <= 0:
+        raise ValueError("relative_mde must be positive")
+    if args.daily_units is not None and args.daily_units <= 0:
+        raise ValueError("daily_units must be positive")
+    absolute_mde = args.baseline_rate * args.relative_mde
+    units_per_arm = required_sample_size(
+        ExperimentDesign(
+            baseline_rate=args.baseline_rate,
+            absolute_mde=absolute_mde,
+            alpha=args.alpha,
+            power=args.power,
+        )
+    )
+    payload: dict[str, Any] = {
+        "absolute_mde": absolute_mde,
+        "alpha": args.alpha,
+        "baseline_rate": args.baseline_rate,
+        "power": args.power,
+        "relative_mde": args.relative_mde,
+        "total_units": 2 * units_per_arm,
+        "units_per_arm": units_per_arm,
+    }
+    if args.daily_units is not None:
+        payload["daily_units"] = args.daily_units
+        payload["estimated_days"] = int(np.ceil(payload["total_units"] / args.daily_units))
+    print(json.dumps(payload, sort_keys=True))
+    return 0
+
+
+def _make_experiment(args: argparse.Namespace) -> int:
+    from news_ctr.experiment_data import write_synthetic_experiment
+
+    output = write_synthetic_experiment(
+        args.output,
+        seed=args.seed,
+        users=args.users,
+        corrupt_allocation=args.corrupt_allocation,
+    )
+    print(json.dumps({"evidence_tier": "synthetic-rct", "output": str(output)}, sort_keys=True))
+    return 0
+
+
+def _experiment(args: argparse.Namespace) -> int:
+    from news_ctr.experiments import run_experiment
+
+    output = run_experiment(args.input, args.output, args.config)
+    print(json.dumps({"output": str(output)}, sort_keys=True))
     return 0
 
 

@@ -1,0 +1,2 @@
+metric,kind,control_units,treatment_units,control_mean,treatment_mean,effect,relative_effect,standard_error,ci_lower,ci_upper,p_value,theta,raw_standard_error,variance_reduction
+click,binary,10062,9938,0.1215057173,0.1420214804,0.0205157631,0.1688460724,0.0047395572,0.0112264018,0.0298051245,0.0000150044,0.9567299496,0.0047824887,0.0178730358

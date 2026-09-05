@@ -43,3 +43,57 @@ jobs:
       - run: news-ctr benchmark --data data/synthetic --output artifacts/ci-benchmark --models position,popularity,logistic,lightgbm --bootstrap-samples 20 --text-components 4 --seed 42
       - run: python -c "import pandas as pd; assert 'lightgbm' in set(pd.read_csv('artifacts/ci-benchmark/leaderboard.csv')['model'])"
       - run: grep -q "not an EB-NeRD benchmark" artifacts/ci-benchmark/benchmark_report.md
+
+  decision-extra:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[dev,decision]"
+      - run: python -m pytest --cov=news_ctr --cov-report=term-missing --cov-fail-under=90
+      - run: news-ctr make-synthetic --output data/ci-ranking --seed 42 --users 30 --articles 80 --impressions 180
+      - run: news-ctr analyze --data data/ci-ranking --output artifacts/analytics-ci --split validation --min-cell-count 5
+      - run: news-ctr make-experiment --output data/ci-rct.parquet --seed 42 --users 20000
+      - run: news-ctr experiment --input data/ci-rct.parquet --output artifacts/experiment-ci --config configs/experiment-v3.json
+      - run: python -c "from news_ctr.portfolio import assemble_portfolio; assemble_portfolio('artifacts/analytics-ci', 'artifacts/experiment-ci', 'artifacts/portfolio-ci')"
+      - name: Verify complete and reproducible aggregate evidence
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from PIL import Image
+          from news_ctr.portfolio import ANALYTICS_ARTIFACTS, EXPERIMENT_ARTIFACTS
+
+          analytics = {path.name for path in Path("artifacts/analytics-ci").iterdir()}
+          experiment = {path.name for path in Path("artifacts/experiment-ci").iterdir()}
+          assert analytics == set(ANALYTICS_ARTIFACTS)
+          assert experiment == set(EXPERIMENT_ARTIFACTS)
+          for committed in Path("artifacts/portfolio-v3").iterdir():
+              regenerated = Path("artifacts/portfolio-ci") / committed.name
+              assert regenerated.is_file(), committed.name
+              if committed.suffix == ".png":
+                  with Image.open(committed) as expected, Image.open(regenerated) as actual:
+                      expected.verify()
+                      actual.verify()
+                  with Image.open(committed) as expected, Image.open(regenerated) as actual:
+                      assert expected.size == actual.size, committed.name
+                      assert expected.mode == actual.mode, committed.name
+                      assert expected.info["Description"] == actual.info["Description"]
+                      assert expected.getbbox() is not None, committed.name
+                      assert actual.getbbox() is not None, committed.name
+                      expected_colors = expected.convert("RGB").getcolors(
+                          maxcolors=expected.width * expected.height
+                      )
+                      actual_colors = actual.convert("RGB").getcolors(
+                          maxcolors=actual.width * actual.height
+                      )
+                      assert expected_colors is not None and len(expected_colors) > 1
+                      assert actual_colors is not None and len(actual_colors) > 1
+              else:
+                  assert committed.read_bytes() == regenerated.read_bytes(), committed.name
+          PY
+      - run: grep -q "synthetic-rct" artifacts/experiment-ci/decision_report.md
+      - run: grep -qi "not production lift" artifacts/experiment-ci/decision_report.md

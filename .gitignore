@@ -16,3 +16,6 @@ artifacts/portfolio-v2/runs/
 artifacts/**/model.joblib
 artifacts/**/model_metadata.json
 artifacts/.portfolio-v2.staging-*/
+artifacts/analytics-*/
+artifacts/experiment-*/
+artifacts/portfolio-v3-regenerated/
