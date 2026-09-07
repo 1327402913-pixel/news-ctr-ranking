@@ -108,5 +108,6 @@ def write_synthetic_market_panel(
         )
     except Exception:
         output.unlink(missing_ok=True)
+        metadata_path.unlink(missing_ok=True)
         raise
     return output

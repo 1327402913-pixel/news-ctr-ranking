@@ -41,5 +41,6 @@
     "week_max": 11,
     "week_min": -20
   },
+  "reproduce": "make causal-impact-v4",
   "schema_version": 1
 }

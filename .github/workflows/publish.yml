@@ -53,7 +53,7 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: python -m pip install --upgrade pip
-      - run: python -m pip install -e ".[dev,decision]"
+      - run: python -m pip install -e ".[dev,decision,causal]"
       - run: python -m pytest --cov=news_ctr --cov-report=term-missing --cov-fail-under=90
       - run: news-ctr make-synthetic --output data/ci-ranking --seed 42 --users 30 --articles 80 --impressions 180
       - run: news-ctr analyze --data data/ci-ranking --output artifacts/analytics-ci --split validation --min-cell-count 5

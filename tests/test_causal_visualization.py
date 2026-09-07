@@ -4,6 +4,10 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+
+pytest.importorskip("matplotlib")
+pytest.importorskip("PIL")
+
 from PIL import Image
 
 from news_ctr.causal_visualization import write_event_study_plot

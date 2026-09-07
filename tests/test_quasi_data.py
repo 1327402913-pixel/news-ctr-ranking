@@ -104,3 +104,33 @@ def test_market_panel_refuses_to_overwrite_data_or_its_sidecar(tmp_path: Path) -
     data_only.with_suffix(".metadata.json").write_text("{}", encoding="utf-8")
     with pytest.raises(ValueError, match="already exists"):
         write_synthetic_market_panel(data_only, seed=42, markets=10, pre_weeks=3, post_weeks=2)
+
+
+def test_market_panel_removes_a_partial_sidecar_after_write_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Catches metadata write failures leaving a retry-blocking partial sidecar."""
+
+    output = tmp_path / "panel.parquet"
+    metadata_path = output.with_suffix(".metadata.json")
+    original_write_text = Path.write_text
+
+    def fail_metadata_write(path: Path, data: str, **kwargs):
+        if path == metadata_path:
+            original_write_text(path, "partial", encoding="utf-8")
+            raise OSError("injected metadata write failure")
+        return original_write_text(path, data, **kwargs)
+
+    monkeypatch.setattr(Path, "write_text", fail_metadata_write)
+
+    with pytest.raises(OSError, match="injected metadata write failure"):
+        write_synthetic_market_panel(
+            output,
+            seed=42,
+            markets=10,
+            pre_weeks=3,
+            post_weeks=2,
+        )
+
+    assert not output.exists()
+    assert not metadata_path.exists()

@@ -7,6 +7,8 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+pytest.importorskip("statsmodels")
+
 import news_ctr.causal_workflow as causal_workflow
 from news_ctr.causal_workflow import CAUSAL_ARTIFACTS, run_causal_impact
 from news_ctr.quasi_data import write_synthetic_market_panel
@@ -45,6 +47,7 @@ def test_causal_workflow_writes_complete_truthful_evidence(tmp_path: Path) -> No
     assert manifest["config"]["sha256"] == hashlib.sha256(config.read_bytes()).hexdigest()
     assert manifest["analysis_contract"]["weighting"] == "candidate_exposures"
     assert manifest["analysis_contract"]["covariance"] == "cluster:market_id"
+    assert manifest["reproduce"] == "make causal-impact-v4"
 
 
 def test_causal_workflow_rejects_missing_input_or_sidecar(tmp_path: Path) -> None:

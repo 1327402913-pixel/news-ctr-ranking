@@ -37,3 +37,16 @@ def test_ci_has_a_complete_causal_extra_release_gate() -> None:
         "not production lift",
     )
     assert all(item in workflow for item in required)
+
+
+def test_optional_causal_tests_do_not_break_the_core_dependency_matrix() -> None:
+    """Catches the core CI collecting tests that require uninstalled optional libraries."""
+
+    workflow = Path(".github/workflows/publish.yml").read_text(encoding="utf-8")
+    visualization_tests = Path("tests/test_causal_visualization.py").read_text(encoding="utf-8")
+    workflow_tests = Path("tests/test_causal_workflow.py").read_text(encoding="utf-8")
+
+    assert 'python -m pip install -e ".[dev,decision,causal]"' in workflow
+    assert 'pytest.importorskip("matplotlib")' in visualization_tests
+    assert 'pytest.importorskip("PIL")' in visualization_tests
+    assert 'pytest.importorskip("statsmodels")' in workflow_tests

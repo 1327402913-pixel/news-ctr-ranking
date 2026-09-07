@@ -186,6 +186,7 @@ def run_causal_impact(input_path: Path, output: Path, config_path: Path) -> Path
         "input": {"sha256": provenance["input_sha256"]},
         "metadata": {"sha256": provenance["metadata_sha256"]},
         "config": {"sha256": provenance["config_sha256"]},
+        "reproduce": "make causal-impact-v4",
     }
 
     output.parent.mkdir(parents=True, exist_ok=True)
