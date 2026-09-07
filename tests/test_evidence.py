@@ -16,3 +16,14 @@ def test_unknown_dataset_source_is_rejected() -> None:
 
     with pytest.raises(ValueError, match="unknown evidence source"):
         classify_dataset_evidence("mystery:validation")
+
+
+def test_quasi_experiment_evidence_is_explicitly_limited() -> None:
+    """Catches quasi-experimental teaching evidence being presented as production lift."""
+
+    tier = EvidenceTier.SYNTHETIC_QUASI_EXPERIMENT
+    assert tier.value == "synthetic-quasi-experiment"
+    assert classify_dataset_evidence(tier.value) is tier
+    banner = evidence_banner(tier)
+    assert "quasi-experimental" in banner.lower()
+    assert "not production lift" in banner.lower()

@@ -9,6 +9,7 @@ class EvidenceTier(str, Enum):
     """How strongly an artifact can support a data-science claim."""
 
     SYNTHETIC_RCT = "synthetic-rct"
+    SYNTHETIC_QUASI_EXPERIMENT = "synthetic-quasi-experiment"
     SYNTHETIC_OBSERVATIONAL = "synthetic-observational"
     LICENSED_EBNERD = "licensed-ebnerd"
 
@@ -18,6 +19,8 @@ def classify_dataset_evidence(source_name: str) -> EvidenceTier:
 
     if source_name == EvidenceTier.SYNTHETIC_RCT.value:
         return EvidenceTier.SYNTHETIC_RCT
+    if source_name == EvidenceTier.SYNTHETIC_QUASI_EXPERIMENT.value:
+        return EvidenceTier.SYNTHETIC_QUASI_EXPERIMENT
     if source_name == EvidenceTier.SYNTHETIC_OBSERVATIONAL.value or source_name.startswith(
         "synthetic:"
     ):
@@ -34,6 +37,10 @@ def evidence_banner(tier: EvidenceTier) -> str:
         EvidenceTier.SYNTHETIC_RCT: (
             "Synthetic randomized teaching evidence. It validates the experiment-analysis "
             "workflow; it is not production lift."
+        ),
+        EvidenceTier.SYNTHETIC_QUASI_EXPERIMENT: (
+            "Synthetic quasi-experimental teaching evidence. It validates the "
+            "identification, diagnostic, and reporting workflow; it is not production lift."
         ),
         EvidenceTier.SYNTHETIC_OBSERVATIONAL: (
             "Synthetic observational engineering evidence. It validates the ranking and "
