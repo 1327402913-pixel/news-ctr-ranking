@@ -187,7 +187,9 @@ does not introduce currency, revenue, or lifetime-value assumptions.
 
 The report uses four mutually exclusive states:
 
-- `invalid_design`: integrity, cluster-count, parallel-trend, or placebo diagnostics fail;
+- `invalid_design`: the panel is structurally estimable but the parallel-trend or
+  placebo diagnostic fails; structural integrity and cluster-count failures stop
+  analysis before publication;
 - `supports_incremental_impact`: diagnostics pass and the primary lower confidence
   bound exceeds the +0.002 practical threshold;
 - `evidence_of_no_benefit`: diagnostics pass and the primary upper confidence bound
@@ -224,6 +226,12 @@ confidence intervals, evidence-tier description metadata, fixed dimensions, fixe
 colors, and no timestamps. It is byte-stable within one runtime and structurally
 verified across platforms.
 
+### `src/news_ctr/causal_workflow.py`
+
+Owns input/metadata provenance validation, manifest creation, complete artifact
+writing, and atomic directory publication. It orchestrates the estimator, report, and
+plot without implementing their statistical logic.
+
 ### `src/news_ctr/cli.py`
 
 Adds `make-quasi-experiment` and `causal-impact`, following the existing CLI and
@@ -245,9 +253,9 @@ atomic-output conventions.
 10. `run_manifest.json`
 
 The manifest records the evidence tier, input and metadata hashes, config hash,
-package/runtime versions, command, and exact artifact names. Runtime-version fields
-are documented provenance; scientific outputs must remain deterministic for the same
-input and configuration.
+analysis contract, reproduction command, and exact artifact names. It contains no
+machine-specific timestamps or runtime-version fields, so it is deterministic for the
+same input and configuration.
 
 ## Reporting
 
