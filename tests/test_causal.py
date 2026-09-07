@@ -1,13 +1,18 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import pytest
 
-from news_ctr.causal import CausalConfig, validate_market_panel
+from news_ctr.causal import (
+    CausalConfig,
+    fit_difference_in_differences,
+    validate_market_panel,
+)
 from news_ctr.quasi_data import write_synthetic_market_panel
 
 
@@ -218,3 +223,118 @@ def test_market_panel_validation_enforces_cluster_and_time_minima(
     )
     with pytest.raises(ValueError, match="pre-treatment weeks"):
         validate_market_panel(short_window, short_config)
+
+
+def test_difference_in_differences_recovers_the_known_incremental_effect(
+    panel: pd.DataFrame, config: CausalConfig
+) -> None:
+    """Catches an estimator that omits weighting, fixed effects, or clustered inference."""
+
+    pytest.importorskip("statsmodels")
+    estimate = fit_difference_in_differences(panel, config)
+
+    assert estimate["term"].tolist() == ["policy_active"]
+    row = estimate.iloc[0]
+    assert row["ci_lower"] < 0.006 < row["ci_upper"]
+    assert row["effect"] > config.practical_threshold
+    assert row["standard_error"] > 0
+    assert 0 <= row["p_value"] <= 1
+    assert row["clusters"] == 60
+    assert row["observations"] == len(panel)
+    assert row["total_exposure"] == panel["candidate_exposures"].sum()
+    assert row["covariance"] == "cluster:market_id"
+
+
+def test_difference_in_differences_keeps_a_null_effect_inside_the_interval(
+    panel: pd.DataFrame, config: CausalConfig
+) -> None:
+    """Catches inference that manufactures lift after the injected effect is removed."""
+
+    pytest.importorskip("statsmodels")
+    null_panel = panel.copy()
+    active = null_panel["policy_active"].eq(1)
+    removed_clicks = np.rint(0.006 * null_panel.loc[active, "candidate_exposures"]).astype(int)
+    null_panel.loc[active, "clicks"] -= removed_clicks
+    null_panel["ctr"] = null_panel["clicks"] / null_panel["candidate_exposures"]
+
+    row = fit_difference_in_differences(null_panel, config).iloc[0]
+
+    assert row["ci_lower"] <= 0 <= row["ci_upper"]
+
+
+def test_difference_in_differences_uses_exposure_weights(
+    config: CausalConfig,
+) -> None:
+    """Catches silently replacing the declared exposure-weighted estimand with OLS."""
+
+    pytest.importorskip("statsmodels")
+    small_config = replace(
+        config,
+        minimum_markets=4,
+        minimum_treated_markets=2,
+        minimum_control_markets=2,
+        minimum_pre_weeks=2,
+        minimum_post_weeks=2,
+    )
+    rows = []
+    market_specs = [
+        ("control_large", 0, 10_000, 0.000, 0.000),
+        ("control_small", 0, 1_000, 0.002, 0.000),
+        ("treated_large", 1, 10_000, 0.004, 0.010),
+        ("treated_small", 1, 1_000, 0.006, 0.040),
+    ]
+    residual_patterns = {
+        "control_large": (0.000, 0.001, -0.001, 0.002),
+        "control_small": (0.002, -0.001, 0.001, -0.002),
+        "treated_large": (-0.001, 0.002, 0.000, -0.001),
+        "treated_small": (0.001, 0.000, -0.002, 0.001),
+    }
+    for market_id, treated, exposure, market_effect, treatment_effect in market_specs:
+        for week_index, week in enumerate((-2, -1, 0, 1)):
+            active = int(treated and week >= 0)
+            rate = (
+                0.100
+                + market_effect
+                + 0.001 * week
+                + treatment_effect * active
+                + residual_patterns[market_id][week_index]
+            )
+            clicks = round(exposure * rate)
+            rows.append(
+                {
+                    "market_id": market_id,
+                    "relative_week": week,
+                    "treated_market": treated,
+                    "policy_active": active,
+                    "candidate_exposures": exposure,
+                    "clicks": clicks,
+                    "ctr": clicks / exposure,
+                    "market_size_index": exposure / 1_000,
+                }
+            )
+    small_panel = pd.DataFrame(rows)
+
+    market_dummies = pd.get_dummies(small_panel["market_id"], drop_first=True, dtype=float)
+    week_dummies = pd.get_dummies(small_panel["relative_week"], drop_first=True, dtype=float)
+    design = pd.concat(
+        [
+            pd.Series(1.0, index=small_panel.index, name="const"),
+            market_dummies,
+            week_dummies,
+            small_panel[["policy_active"]].astype(float),
+        ],
+        axis=1,
+    )
+    weights = small_panel["candidate_exposures"].to_numpy(dtype=float)
+    weighted_design = design.to_numpy() * np.sqrt(weights)[:, None]
+    weighted_outcome = small_panel["ctr"].to_numpy() * np.sqrt(weights)
+    expected_weighted = np.linalg.lstsq(weighted_design, weighted_outcome, rcond=None)[0][-1]
+    expected_unweighted = np.linalg.lstsq(
+        design.to_numpy(), small_panel["ctr"].to_numpy(), rcond=None
+    )[0][-1]
+
+    row = fit_difference_in_differences(small_panel, small_config).iloc[0]
+
+    assert row["effect"] == pytest.approx(expected_weighted)
+    assert abs(row["effect"] - expected_unweighted) > 0.005
+    assert row["covariance"] == "cluster:market_id"

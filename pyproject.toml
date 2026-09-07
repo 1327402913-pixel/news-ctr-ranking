@@ -30,6 +30,12 @@ dependencies = [
 
 [project.optional-dependencies]
 ranking = ["lightgbm>=4.5"]
+causal = [
+  "matplotlib>=3.9",
+  "pillow>=10",
+  "scipy>=1.14",
+  "statsmodels>=0.14",
+]
 decision = [
   "duckdb>=1.1",
   "matplotlib>=3.9",

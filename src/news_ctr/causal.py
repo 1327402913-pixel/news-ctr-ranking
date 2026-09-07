@@ -10,6 +10,24 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+_ESTIMATE_COLUMNS = [
+    "term",
+    "effect",
+    "standard_error",
+    "statistic",
+    "p_value",
+    "ci_lower",
+    "ci_upper",
+    "alpha",
+    "treated_markets",
+    "control_markets",
+    "clusters",
+    "observations",
+    "total_exposure",
+    "weighting",
+    "covariance",
+]
+
 _CONFIG_FIELDS = {
     "active_column",
     "alpha",
@@ -281,3 +299,102 @@ def validate_market_panel(frame: pd.DataFrame, config: CausalConfig) -> dict[str
         "week_max": int(unique_weeks[-1]),
         "week_min": int(unique_weeks[0]),
     }
+
+
+def _fit_fixed_effect_model(
+    frame: pd.DataFrame,
+    config: CausalConfig,
+    treatment_columns: tuple[str, ...],
+):
+    """Fit an exposure-weighted two-way fixed-effect model with clustered covariance."""
+
+    try:
+        import statsmodels.api as sm
+    except ImportError as exc:  # pragma: no cover - exercised in environments without the extra
+        raise RuntimeError(
+            "causal analysis requires the optional dependency group: pip install '.[causal]'"
+        ) from exc
+
+    market_categories = sorted(frame[config.unit_column].unique())
+    week_categories = sorted(frame[config.time_column].unique())
+    market_values = pd.Categorical(frame[config.unit_column], categories=market_categories)
+    week_values = pd.Categorical(frame[config.time_column], categories=week_categories)
+    market_dummies = pd.get_dummies(
+        market_values,
+        prefix="market",
+        drop_first=True,
+        dtype=float,
+    )
+    week_dummies = pd.get_dummies(
+        week_values,
+        prefix="week",
+        drop_first=True,
+        dtype=float,
+    )
+    market_dummies.index = frame.index
+    week_dummies.index = frame.index
+    design = pd.concat(
+        [
+            pd.Series(1.0, index=frame.index, name="const"),
+            market_dummies,
+            week_dummies,
+            frame.loc[:, list(treatment_columns)].astype(float),
+        ],
+        axis=1,
+    )
+    design_values = design.to_numpy(dtype=float)
+    if not np.isfinite(design_values).all():
+        raise ValueError("fixed-effect design matrix contains non-finite values")
+    if np.linalg.matrix_rank(design_values) != design_values.shape[1]:
+        raise ValueError("fixed-effect design matrix is rank deficient")
+
+    model = sm.WLS(
+        frame[config.outcome_column].astype(float),
+        design.astype(float),
+        weights=frame[config.exposure_column].astype(float),
+    )
+    result = model.fit(
+        cov_type="cluster",
+        cov_kwds={
+            "groups": frame[config.unit_column],
+            "use_correction": True,
+        },
+    )
+    inference = np.concatenate(
+        [
+            np.asarray(result.params),
+            np.asarray(result.bse),
+            np.asarray(result.tvalues),
+            np.asarray(result.pvalues),
+            np.asarray(result.conf_int(alpha=config.alpha)).ravel(),
+        ]
+    )
+    if not np.isfinite(inference).all():
+        raise ValueError("fixed-effect model produced non-finite inference")
+    return result
+
+
+def fit_difference_in_differences(frame: pd.DataFrame, config: CausalConfig) -> pd.DataFrame:
+    """Estimate the rollout effect with weighted two-way fixed effects."""
+
+    diagnostics = validate_market_panel(frame, config)
+    result = _fit_fixed_effect_model(frame, config, (config.active_column,))
+    interval = result.conf_int(alpha=config.alpha).loc[config.active_column]
+    row = {
+        "term": config.active_column,
+        "effect": float(result.params[config.active_column]),
+        "standard_error": float(result.bse[config.active_column]),
+        "statistic": float(result.tvalues[config.active_column]),
+        "p_value": float(result.pvalues[config.active_column]),
+        "ci_lower": float(interval.iloc[0]),
+        "ci_upper": float(interval.iloc[1]),
+        "alpha": float(config.alpha),
+        "treated_markets": int(diagnostics["treated_markets"]),
+        "control_markets": int(diagnostics["control_markets"]),
+        "clusters": int(diagnostics["markets"]),
+        "observations": len(frame),
+        "total_exposure": int(frame[config.exposure_column].sum()),
+        "weighting": config.exposure_column,
+        "covariance": f"cluster:{config.unit_column}",
+    }
+    return pd.DataFrame([row], columns=_ESTIMATE_COLUMNS)
