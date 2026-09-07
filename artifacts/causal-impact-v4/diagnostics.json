@@ -21,9 +21,9 @@
     "alpha": 0.05,
     "degrees_of_freedom": 11,
     "lead_terms": 11,
-    "p_value": 0.6313575012070555,
+    "p_value": 0.6313575012,
     "passed": true,
-    "statistic": 8.897452149824375
+    "statistic": 8.8974521498
   },
   "placebo": {
     "alpha": 0.05,

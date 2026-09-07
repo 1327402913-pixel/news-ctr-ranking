@@ -37,6 +37,19 @@ CAUSAL_ARTIFACTS = (
 )
 
 
+def _canonicalize_diagnostics(value: object) -> object:
+    """Normalize computed floats to the evidence bundle's published precision."""
+
+    if isinstance(value, dict):
+        return {key: _canonicalize_diagnostics(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_canonicalize_diagnostics(item) for item in value]
+    if isinstance(value, float):
+        rounded = round(value, 10)
+        return 0.0 if rounded == 0 else rounded
+    return value
+
+
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
@@ -106,7 +119,7 @@ def _write_causal_outputs(
         "decision": {"status": decision.status.value},
     }
     (output / "diagnostics.json").write_text(
-        json.dumps(diagnostics, indent=2, sort_keys=True) + "\n",
+        json.dumps(_canonicalize_diagnostics(diagnostics), indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
     (output / "run_manifest.json").write_text(

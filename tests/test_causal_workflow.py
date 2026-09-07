@@ -10,7 +10,11 @@ import pytest
 pytest.importorskip("statsmodels")
 
 import news_ctr.causal_workflow as causal_workflow
-from news_ctr.causal_workflow import CAUSAL_ARTIFACTS, run_causal_impact
+from news_ctr.causal_workflow import (
+    CAUSAL_ARTIFACTS,
+    _canonicalize_diagnostics,
+    run_causal_impact,
+)
 from news_ctr.quasi_data import write_synthetic_market_panel
 
 
@@ -24,6 +28,28 @@ def _fixture(tmp_path: Path) -> tuple[Path, Path]:
     )
     config = Path(__file__).parents[1] / "configs" / "causal-impact-v4.json"
     return panel, config
+
+
+def test_causal_diagnostics_use_cross_platform_numeric_precision() -> None:
+    """Catches insignificant BLAS tail differences breaking reproducibility checks."""
+
+    diagnostics = {
+        "parallel_trends": {
+            "p_value": 0.6313575012070555,
+            "statistic": 8.897452149824375,
+            "passed": True,
+            "degrees_of_freedom": 11,
+        }
+    }
+
+    assert _canonicalize_diagnostics(diagnostics) == {
+        "parallel_trends": {
+            "p_value": 0.6313575012,
+            "statistic": 8.8974521498,
+            "passed": True,
+            "degrees_of_freedom": 11,
+        }
+    }
 
 
 def test_causal_workflow_writes_complete_truthful_evidence(tmp_path: Path) -> None:
