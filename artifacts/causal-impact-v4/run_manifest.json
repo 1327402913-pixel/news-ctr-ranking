@@ -1,0 +1,45 @@
+{
+  "analysis_contract": {
+    "alpha": 0.05,
+    "covariance": "cluster:market_id",
+    "event_window": [
+      -12,
+      8
+    ],
+    "outcome": "ctr",
+    "placebo_week": -8,
+    "practical_threshold": 0.002,
+    "reference_week": -1,
+    "rollout_week": 0,
+    "weighting": "candidate_exposures"
+  },
+  "artifacts": [
+    "balance.csv",
+    "business_impact.csv",
+    "causal_report.md",
+    "config_snapshot.json",
+    "diagnostics.json",
+    "did_estimate.csv",
+    "event_study.csv",
+    "event_study.png",
+    "placebo_estimate.csv",
+    "run_manifest.json"
+  ],
+  "config": {
+    "sha256": "8e79b1e74f48e005ea1456895d7b3372b93a2407a6ad108babed2ac0498c0482"
+  },
+  "evidence_tier": "synthetic-quasi-experiment",
+  "input": {
+    "sha256": "6ee7241c37c8ee66597b5488f69cfaf562bb2de3f375b30b56d5f650e89e1b88"
+  },
+  "metadata": {
+    "sha256": "aa9c096da4567bc19d29fd3499765c999dc5aa1381032f582aee62635d1182ba"
+  },
+  "panel": {
+    "markets": 60,
+    "rows": 1920,
+    "week_max": 11,
+    "week_min": -20
+  },
+  "schema_version": 1
+}

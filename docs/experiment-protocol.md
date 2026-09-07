@@ -2,12 +2,13 @@
 
 ## Evidence tiers and permitted claims
 
-This repository keeps three evidence types separate:
+This repository keeps four evidence types separate:
 
 | Tier | Source | Supports | Does not support |
 | --- | --- | --- | --- |
 | `synthetic-observational` | Deterministic EB-NeRD-shaped ranking logs | Data contracts, SQL correctness, reproducibility, ranking workflow | Real ranking quality, causal lift |
 | `synthetic-rct` | Deterministic user-level randomized fixture | Power/SRM/ITT/CUPED/decision-code behavior | Production lift or external validity |
+| `synthetic-quasi-experiment` | Deterministic selected-market rollout panel | DiD, fixed-effect, event-study, placebo, and policy-code behavior | Production lift, external validity, or proof of parallel trends |
 | `licensed-ebnerd` | User-provided licensed public dataset | Aggregate offline ranking quality on the named split | Online causal impact |
 
 Reports display the tier and a claim boundary. Synthetic numbers must never be
@@ -57,6 +58,52 @@ Observational evidence tiers are rejected before estimation. The sidecar unit,
 allocation, and row count must match the input frame and config. Each persisted run
 copies the exact predeclared config and records SHA-256 hashes for the Parquet input,
 metadata sidecar, and config.
+
+## Quasi-experimental rollout protocol
+
+Difference-in-Differences is appropriate when treatment timing and a credible untreated
+comparison group are observed, but random assignment was unavailable. It is not a substitute
+for an A/B test when randomization is feasible. The committed
+[`causal-impact-v4.json`](../configs/causal-impact-v4.json) fixes all identification and
+interpretation choices before estimation.
+
+The unit is a market-week. The primary estimand is the candidate-exposure-weighted change in
+CTR for treated markets after week 0 relative to the contemporaneous change in control
+markets. Weighted least squares includes market fixed effects, week fixed effects, and the
+`policy_active` interaction. Candidate exposures are analytic weights, so the effect targets
+the average displayed-candidate exposure rather than the average market-week.
+
+Standard errors are clustered by `market_id`. Outcomes within a market can remain correlated
+across weeks, and treating 1,920 market-week rows as independent would overstate precision.
+The 60 markets—not the row count—provide the independent clusters for inference.
+
+The identifying assumption is parallel untreated potential-outcome trends: absent rollout,
+treated and control markets would have changed similarly. Market fixed effects absorb stable
+level differences, including the deliberately different pre-period market sizes and CTR
+levels in the synthetic fixture. Week fixed effects absorb shocks shared across markets. They
+do not remove treated-market-specific, time-varying confounding.
+
+Three supporting diagnostics are reported without overstating what they establish:
+
+- event-study interactions cover relative weeks -12 through 8 and omit week -1; a joint Wald
+  test of all 11 pre-treatment leads checks for detectable differential pre-trends;
+- a placebo assigns a fake rollout at week -8 using only true pre-period data; its confidence
+  interval must include zero;
+- pre-period balance compares market-level means, not market-week pseudo-replicates. Imbalance
+  in levels is descriptive and compatible with DiD only when differential trends are absent.
+
+The interpretation policy first requires both the pre-trend and placebo diagnostics to pass.
+It then returns `supports_incremental_impact` only when the primary confidence-interval lower
+bound exceeds +0.002 absolute CTR, `evidence_of_no_benefit` when the upper bound is at or below
+zero, and `inconclusive` otherwise. Failed diagnostics return `invalid_design` regardless of
+the headline estimate. A passing diagnostic is supportive evidence, never proof of the
+identifying assumptions.
+
+Non-goals are explicit: the workflow does not claim a natural experiment, estimate revenue
+or lifetime value, correct interference, model staggered adoption, or prove production impact.
+The next real-data step is to document rollout assignment, check for concurrent market-level
+changes, predeclare exclusions and alternative specifications, and compare the result with a
+randomized holdout whenever operationally possible.
 
 ## Observational SQL protocol
 

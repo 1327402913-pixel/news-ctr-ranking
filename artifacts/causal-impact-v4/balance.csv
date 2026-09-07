@@ -1,0 +1,4 @@
+metric,treated_mean,control_mean,standardized_mean_difference,absolute_standardized_mean_difference,treated_markets,control_markets
+market_size_index,1.2258537431,0.8598044170,2.6406770759,2.6406770759,30,30
+candidate_exposures,17069.5983333333,12007.6466666667,2.6111429429,2.6111429429,30,30
+ctr,0.1243991725,0.1080064902,2.2858361094,2.2858361094,30,30

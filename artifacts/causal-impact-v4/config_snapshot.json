@@ -1,0 +1,31 @@
+{
+  "active_column": "policy_active",
+  "alpha": 0.05,
+  "balance_columns": [
+    "market_size_index",
+    "candidate_exposures",
+    "ctr"
+  ],
+  "business_exposure_scale": 1000000,
+  "click_column": "clicks",
+  "event_window": [
+    -12,
+    8
+  ],
+  "exposure_column": "candidate_exposures",
+  "group_column": "treated_market",
+  "maximum_missing_market_week_share": 0.0,
+  "minimum_control_markets": 8,
+  "minimum_markets": 20,
+  "minimum_post_weeks": 4,
+  "minimum_pre_weeks": 8,
+  "minimum_treated_markets": 8,
+  "outcome_column": "ctr",
+  "outcome_kind": "rate",
+  "placebo_week": -8,
+  "practical_threshold": 0.002,
+  "reference_week": -1,
+  "rollout_week": 0,
+  "time_column": "relative_week",
+  "unit_column": "market_id"
+}

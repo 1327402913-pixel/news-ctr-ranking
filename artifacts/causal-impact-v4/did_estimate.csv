@@ -1,0 +1,2 @@
+term,effect,standard_error,statistic,p_value,ci_lower,ci_upper,alpha,treated_markets,control_markets,clusters,observations,total_exposure,weighting,covariance
+policy_active,0.0061232416,0.0002727595,22.4492300884,0.0000000000,0.0055886428,0.0066578405,0.0500000000,30,30,60,1920,27886511,candidate_exposures,cluster:market_id

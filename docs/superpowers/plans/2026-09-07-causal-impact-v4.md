@@ -103,15 +103,19 @@ second = write_synthetic_market_panel(
 pd.testing.assert_frame_equal(pd.read_parquet(first), pd.read_parquet(second))
 frame = pd.read_parquet(first)
 assert frame.columns.tolist() == [
-    "market_id", "relative_week", "treated_market", "policy_active",
-    "candidate_exposures", "clicks", "ctr", "market_size_index",
+    "market_id",
+    "relative_week",
+    "treated_market",
+    "policy_active",
+    "candidate_exposures",
+    "clicks",
+    "ctr",
+    "market_size_index",
 ]
 assert len(frame) == 60 * 32
 assert frame[["market_id", "relative_week"]].duplicated().sum() == 0
 assert frame.groupby("market_id")["treated_market"].nunique().eq(1).all()
-assert (frame["policy_active"] == (
-    frame["treated_market"] * (frame["relative_week"] >= 0)
-)).all()
+assert (frame["policy_active"] == (frame["treated_market"] * (frame["relative_week"] >= 0))).all()
 ```
 
 Also assert the two metadata JSON documents are identical, the tier is
@@ -477,7 +481,10 @@ Build minimal `CausalAnalysis` fixtures and parameterize these expectations:
 ```python
 cases = [
     ({"parallel": False, "placebo": True, "lower": 0.004, "upper": 0.008}, "invalid_design"),
-    ({"parallel": True, "placebo": True, "lower": 0.003, "upper": 0.008}, "supports_incremental_impact"),
+    (
+        {"parallel": True, "placebo": True, "lower": 0.003, "upper": 0.008},
+        "supports_incremental_impact",
+    ),
     ({"parallel": True, "placebo": True, "lower": -0.008, "upper": 0.0}, "evidence_of_no_benefit"),
     ({"parallel": True, "placebo": True, "lower": -0.001, "upper": 0.006}, "inconclusive"),
 ]
@@ -599,9 +606,15 @@ exactly:
 
 ```python
 CAUSAL_ARTIFACTS = (
-    "balance.csv", "business_impact.csv", "causal_report.md",
-    "config_snapshot.json", "diagnostics.json", "did_estimate.csv",
-    "event_study.csv", "event_study.png", "placebo_estimate.csv",
+    "balance.csv",
+    "business_impact.csv",
+    "causal_report.md",
+    "config_snapshot.json",
+    "diagnostics.json",
+    "did_estimate.csv",
+    "event_study.csv",
+    "event_study.png",
+    "placebo_estimate.csv",
     "run_manifest.json",
 )
 ```
@@ -685,17 +698,25 @@ statsmodels/Matplotlib:
 ```python
 def _make_quasi_experiment(args: argparse.Namespace) -> int:
     from news_ctr.quasi_data import write_synthetic_market_panel
+
     output = write_synthetic_market_panel(
-        args.output, seed=args.seed, markets=args.markets,
-        pre_weeks=args.pre_weeks, post_weeks=args.post_weeks,
+        args.output,
+        seed=args.seed,
+        markets=args.markets,
+        pre_weeks=args.pre_weeks,
+        post_weeks=args.post_weeks,
     )
-    print(json.dumps({
-        "evidence_tier": "synthetic-quasi-experiment", "output": str(output)
-    }, sort_keys=True))
+    print(
+        json.dumps(
+            {"evidence_tier": "synthetic-quasi-experiment", "output": str(output)}, sort_keys=True
+        )
+    )
     return 0
+
 
 def _causal_impact(args: argparse.Namespace) -> int:
     from news_ctr.causal_workflow import run_causal_impact
+
     output = run_causal_impact(args.input, args.output, args.config)
     print(json.dumps({"output": str(output)}, sort_keys=True))
     return 0

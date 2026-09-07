@@ -1,0 +1,2 @@
+term,effect,standard_error,statistic,p_value,ci_lower,ci_upper,alpha,treated_markets,control_markets,clusters,observations,total_exposure,weighting,covariance
+placebo_policy_active,-0.0001151303,0.0003333506,-0.3453729398,0.7298140180,-0.0007684853,0.0005382248,0.0500000000,30,30,60,1200,17446347,candidate_exposures,cluster:market_id

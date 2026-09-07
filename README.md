@@ -29,7 +29,49 @@ The repository turns nested EB-NeRD-shaped Parquet logs into one auditable exper
 6. summarize product KPIs and segments through reviewed DuckDB SQL;
 7. size and validate a user-randomized experiment, estimate ITT and CUPED effects,
    check guardrails, and apply a predeclared launch rule;
-8. save a versioned ranker and use it for label-free batch Top-K scoring.
+8. estimate a non-random market rollout with exposure-weighted Difference-in-Differences,
+   market/week fixed effects, clustered inference, an event study, and a placebo;
+9. save a versioned ranker and use it for label-free batch Top-K scoring.
+
+## Causal Impact V4: observational rollout analysis
+
+The V4 layer asks a distinct business question: **when a ranking policy is rolled out
+to selected markets rather than randomized, is the observed CTR change consistent with
+incremental impact?** It analyzes a deterministic synthetic panel of 60 markets over
+20 pre-treatment and 12 post-treatment weeks. This demonstrates quasi-experimental
+workflow design; it is **not production lift**.
+
+| Check | Committed synthetic result | Interpretation |
+| --- | ---: | --- |
+| Exposure-weighted DiD | +0.6123 pp, 95% CI [0.5589, 0.6658] | Interval clears the predeclared +0.2 pp threshold |
+| Parallel-trends joint test | p = 0.6314 across 11 leads | Does not reject zero pre-treatment lead effects |
+| Placebo rollout at week -8 | -0.0115 pp, 95% CI [-0.0768, 0.0538] | Interval contains zero |
+| Business translation | +6,123 clicks per 1,000,000 exposures | 95% interval [5,589, 6,658], with no revenue assumption |
+
+![Synthetic quasi-experiment event study with 95% confidence intervals](artifacts/causal-impact-v4/event_study.png)
+
+The predeclared policy returns **`supports_incremental_impact`**. Treated markets have
+substantially different pre-period levels by construction, illustrating non-random
+rollout selection: market fixed effects absorb stable level differences, while week
+fixed effects absorb shared shocks. Neither adjustment rules out differential,
+time-varying confounding, so the conclusion remains conditional on parallel untreated
+potential-outcome trends.
+
+Read the [full causal report](artifacts/causal-impact-v4/causal_report.md),
+[diagnostics](artifacts/causal-impact-v4/diagnostics.json),
+[event-study estimates](artifacts/causal-impact-v4/event_study.csv), and
+[run manifest](artifacts/causal-impact-v4/run_manifest.json). The concise
+[interview brief](docs/causal-impact-brief.md) explains the design and limitations.
+
+### RCT versus quasi-experimental evidence
+
+| Question | Randomized V3 | Quasi-experimental V4 |
+| --- | --- | --- |
+| Assignment | User-level 50/50 randomization | Selected-market common rollout |
+| Estimand | User-level intent-to-treat difference | Exposure-weighted treated-versus-control change |
+| Core assumptions | Valid randomization, SUTVA | Parallel trends, no anticipation, no spillovers |
+| Main diagnostics | SRM, CUPED, guardrails | Event-study leads, placebo rollout, pre-period balance |
+| Strongest claim here | Decision-code behavior on synthetic RCT data | Identification-workflow behavior on synthetic panel data |
 
 ## Decision Science V3: from metric to launch decision
 
@@ -143,6 +185,9 @@ evidence for them beyond the correlated features already present.
 - Built a reproducible decision-science layer with DuckDB KPI queries and a user-level
   randomized-experiment pipeline covering power, SRM, ITT, CUPED, non-inferiority
   guardrails, exploratory segments, and a predeclared launch policy.
+- Built a market-level quasi-experimental impact workflow using exposure-weighted
+  Difference-in-Differences, two-way fixed effects, market-clustered inference, event-study
+  pre-trend tests, placebo analysis, and per-million-exposure business translation.
 
 ## Architecture
 
@@ -165,6 +210,12 @@ flowchart LR
     O[User-randomized experiment] --> P[SRM + ITT + CUPED]
     P --> Q[Guardrails + heterogeneous effects]
     Q --> R[Predeclared launch decision]
+    S[Selected-market rollout panel] --> T[Exposure-weighted market + week fixed effects]
+    T --> U[Event study + joint pre-trend test]
+    T --> V[Pre-period placebo rollout]
+    U --> W[Four-state causal interpretation]
+    V --> W
+    W --> X[Atomic report + provenance]
 ```
 
 The implementation is ordinary Python rather than notebook-only state. Metric tables
@@ -178,7 +229,7 @@ Python 3.10 or newer is required.
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-python -m pip install -e ".[dev,decision]"
+python -m pip install -e ".[dev,decision,causal]"
 
 news-ctr make-synthetic --output data/synthetic --seed 42
 news-ctr audit --data data/synthetic --split train
@@ -207,10 +258,19 @@ news-ctr experiment \
   --input data/synthetic-rct.parquet \
   --output artifacts/experiment-v3 \
   --config configs/experiment-v3.json
+
+news-ctr make-quasi-experiment \
+  --output data/synthetic-market-panel-v4.parquet \
+  --seed 42 --markets 60 --pre-weeks 20 --post-weeks 12
+
+news-ctr causal-impact \
+  --input data/synthetic-market-panel-v4.parquet \
+  --output artifacts/causal-impact-v4-regenerated \
+  --config configs/causal-impact-v4.json
 ```
 
 The same workflows are available as `make benchmark`, `make analytics`, `make
-experiment`, and `make portfolio-v3`. Destinations must not already exist; this
+experiment`, `make causal-impact-v4`, and `make portfolio-v3`. Destinations must not already exist; this
 protects completed evidence from accidental overwrite. The portfolio target writes a
 fresh comparison copy to `artifacts/portfolio-v3-regenerated/`.
 

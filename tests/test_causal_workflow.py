@@ -119,3 +119,33 @@ def test_causal_workflow_is_atomic_and_refuses_overwrite(
 
     assert not output.exists()
     assert not list(tmp_path.glob(".failed.staging-*"))
+
+
+def test_committed_causal_evidence_is_truthful_and_reproducible() -> None:
+    """Catches portfolio numbers drifting away from the declared config and diagnostics."""
+
+    repository = Path(__file__).parents[1]
+    output = repository / "artifacts" / "causal-impact-v4"
+    config = repository / "configs" / "causal-impact-v4.json"
+
+    assert tuple(sorted(item.name for item in output.iterdir())) == CAUSAL_ARTIFACTS
+    report = (output / "causal_report.md").read_text(encoding="utf-8")
+    for phrase in (
+        "synthetic-quasi-experiment",
+        "Difference-in-Differences",
+        "parallel untreated potential-outcome trends",
+        "supports_incremental_impact",
+        "unobserved time-varying confounding",
+        "not production lift",
+    ):
+        assert phrase.lower() in report.lower()
+
+    did = pd.read_csv(output / "did_estimate.csv").iloc[0]
+    assert did["ci_lower"] < 0.006 < did["ci_upper"]
+    diagnostics = json.loads((output / "diagnostics.json").read_text(encoding="utf-8"))
+    assert diagnostics["parallel_trends"]["passed"] is True
+    assert diagnostics["placebo"]["passed"] is True
+    assert diagnostics["decision"]["status"] == "supports_incremental_impact"
+    manifest = json.loads((output / "run_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["config"]["sha256"] == hashlib.sha256(config.read_bytes()).hexdigest()
+    assert (output / "config_snapshot.json").read_bytes() == config.read_bytes()
