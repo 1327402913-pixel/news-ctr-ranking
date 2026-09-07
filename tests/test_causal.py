@@ -10,7 +10,12 @@ import pytest
 
 from news_ctr.causal import (
     CausalConfig,
+    analyze_causal_frame,
+    estimate_event_study,
+    estimate_placebo,
     fit_difference_in_differences,
+    summarize_preperiod_balance,
+    translate_business_impact,
     validate_market_panel,
 )
 from news_ctr.quasi_data import write_synthetic_market_panel
@@ -338,3 +343,131 @@ def test_difference_in_differences_uses_exposure_weights(
     assert row["effect"] == pytest.approx(expected_weighted)
     assert abs(row["effect"] - expected_unweighted) > 0.005
     assert row["covariance"] == "cluster:market_id"
+
+
+def test_event_study_orders_weeks_and_supports_parallel_trends(
+    panel: pd.DataFrame, config: CausalConfig
+) -> None:
+    """Catches missing event-time estimates or a non-auditable pre-trend check."""
+
+    pytest.importorskip("statsmodels")
+    event, parallel = estimate_event_study(panel, config)
+
+    expected_weeks = [*range(-12, -1), *range(0, 9)]
+    assert event["relative_week"].tolist() == expected_weeks
+    assert list(event.columns) == [
+        "relative_week",
+        "term",
+        "effect",
+        "standard_error",
+        "statistic",
+        "p_value",
+        "ci_lower",
+        "ci_upper",
+    ]
+    assert (
+        np.isfinite(event[["effect", "standard_error", "p_value", "ci_lower", "ci_upper"]])
+        .all()
+        .all()
+    )
+    assert parallel["lead_terms"] == 11
+    assert 0 <= parallel["p_value"] <= 1
+    assert parallel["passed"] is True
+    assert event.loc[event["relative_week"] >= 0, "effect"].mean() > 0.004
+
+
+def test_event_study_rejects_a_detectable_treated_market_pretrend(
+    panel: pd.DataFrame, config: CausalConfig
+) -> None:
+    """Catches a parallel-trend diagnostic that always reports success."""
+
+    pytest.importorskip("statsmodels")
+    trending = panel.copy()
+    pretreated = trending["treated_market"].eq(1) & trending["relative_week"].lt(0)
+    trend_fraction = (trending.loc[pretreated, "relative_week"] + 20) / 19
+    added_clicks = np.rint(
+        0.004 * trend_fraction * trending.loc[pretreated, "candidate_exposures"]
+    ).astype(int)
+    trending.loc[pretreated, "clicks"] += added_clicks
+    trending["ctr"] = trending["clicks"] / trending["candidate_exposures"]
+
+    _, parallel = estimate_event_study(trending, config)
+
+    assert parallel["passed"] is False
+    assert parallel["p_value"] < config.alpha
+
+
+def test_placebo_uses_only_the_real_preperiod_and_contains_zero(
+    panel: pd.DataFrame, config: CausalConfig
+) -> None:
+    """Catches a placebo contaminated by real post-rollout outcomes."""
+
+    pytest.importorskip("statsmodels")
+    estimate, diagnostics = estimate_placebo(panel, config)
+
+    assert estimate["term"].tolist() == ["placebo_policy_active"]
+    row = estimate.iloc[0]
+    assert row["observations"] == int(panel["relative_week"].lt(0).sum())
+    assert row["ci_lower"] <= 0 <= row["ci_upper"]
+    assert diagnostics == {
+        "alpha": config.alpha,
+        "ci_contains_zero": True,
+        "placebo_week": config.placebo_week,
+        "passed": True,
+    }
+
+
+def test_preperiod_balance_is_market_level_and_finite(
+    panel: pd.DataFrame, config: CausalConfig
+) -> None:
+    """Catches balance summaries that mistake market-week rows for independent units."""
+
+    balance = summarize_preperiod_balance(panel, config)
+
+    assert balance["metric"].tolist() == list(config.balance_columns)
+    assert list(balance.columns) == [
+        "metric",
+        "treated_mean",
+        "control_mean",
+        "standardized_mean_difference",
+        "absolute_standardized_mean_difference",
+        "treated_markets",
+        "control_markets",
+    ]
+    assert balance["treated_markets"].eq(30).all()
+    assert balance["control_markets"].eq(30).all()
+    assert np.isfinite(balance.select_dtypes(include="number")).all().all()
+
+
+def test_business_translation_scales_the_did_interval_exactly(
+    panel: pd.DataFrame, config: CausalConfig
+) -> None:
+    """Catches business impact numbers that drift from the statistical estimate."""
+
+    pytest.importorskip("statsmodels")
+    did = fit_difference_in_differences(panel, config)
+    impact = translate_business_impact(did, config).iloc[0]
+
+    assert impact["scale_exposures"] == 1_000_000
+    assert impact["incremental_clicks"] == pytest.approx(did.iloc[0]["effect"] * 1_000_000)
+    assert impact["ci_lower_clicks"] == pytest.approx(did.iloc[0]["ci_lower"] * 1_000_000)
+    assert impact["ci_upper_clicks"] == pytest.approx(did.iloc[0]["ci_upper"] * 1_000_000)
+
+
+def test_causal_analysis_orchestrates_all_estimands_and_diagnostics(
+    panel: pd.DataFrame, config: CausalConfig
+) -> None:
+    """Catches reports assembling results from inconsistent or partial analysis runs."""
+
+    pytest.importorskip("statsmodels")
+    analysis = analyze_causal_frame(panel, config)
+
+    assert len(analysis.did_estimate) == 1
+    assert len(analysis.event_study) == 20
+    assert len(analysis.placebo_estimate) == 1
+    assert len(analysis.balance) == 3
+    assert len(analysis.business_impact) == 1
+    assert set(analysis.diagnostics) == {"integrity", "parallel_trends", "placebo"}
+    assert analysis.diagnostics["integrity"]["integrity_passed"] is True
+    assert analysis.diagnostics["parallel_trends"]["passed"] is True
+    assert analysis.diagnostics["placebo"]["passed"] is True

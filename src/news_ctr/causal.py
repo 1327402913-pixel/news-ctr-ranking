@@ -128,6 +128,18 @@ class CausalConfig:
         return config
 
 
+@dataclass(frozen=True)
+class CausalAnalysis:
+    """Complete in-memory result from one validated causal analysis."""
+
+    did_estimate: pd.DataFrame
+    event_study: pd.DataFrame
+    placebo_estimate: pd.DataFrame
+    balance: pd.DataFrame
+    business_impact: pd.DataFrame
+    diagnostics: dict[str, object]
+
+
 def validate_causal_config(config: CausalConfig) -> None:
     """Reject internally inconsistent identification choices."""
 
@@ -398,3 +410,232 @@ def fit_difference_in_differences(frame: pd.DataFrame, config: CausalConfig) -> 
         "covariance": f"cluster:{config.unit_column}",
     }
     return pd.DataFrame([row], columns=_ESTIMATE_COLUMNS)
+
+
+def _event_term(week: int) -> str:
+    direction = "m" if week < 0 else "p"
+    return f"event_{direction}{abs(week)}"
+
+
+def estimate_event_study(
+    frame: pd.DataFrame, config: CausalConfig
+) -> tuple[pd.DataFrame, dict[str, object]]:
+    """Estimate dynamic treatment effects and jointly test pre-treatment leads."""
+
+    validate_market_panel(frame, config)
+    window_start, window_end = config.event_window
+    event_frame = frame.loc[frame[config.time_column].between(window_start, window_end)].copy()
+    weeks = [week for week in range(window_start, window_end + 1) if week != config.reference_week]
+    terms = [_event_term(week) for week in weeks]
+    treated = event_frame[config.group_column].astype(float)
+    for week, term in zip(weeks, terms, strict=True):
+        event_frame[term] = treated * event_frame[config.time_column].eq(week).astype(float)
+
+    result = _fit_fixed_effect_model(event_frame, config, tuple(terms))
+    intervals = result.conf_int(alpha=config.alpha)
+    rows = []
+    for week, term in zip(weeks, terms, strict=True):
+        rows.append(
+            {
+                "relative_week": week,
+                "term": term,
+                "effect": float(result.params[term]),
+                "standard_error": float(result.bse[term]),
+                "statistic": float(result.tvalues[term]),
+                "p_value": float(result.pvalues[term]),
+                "ci_lower": float(intervals.loc[term].iloc[0]),
+                "ci_upper": float(intervals.loc[term].iloc[1]),
+            }
+        )
+    event = pd.DataFrame(
+        rows,
+        columns=[
+            "relative_week",
+            "term",
+            "effect",
+            "standard_error",
+            "statistic",
+            "p_value",
+            "ci_lower",
+            "ci_upper",
+        ],
+    )
+
+    lead_terms = [_event_term(week) for week in weeks if week < config.rollout_week]
+    lead_effects = result.params.loc[lead_terms].to_numpy(dtype=float)
+    lead_covariance = result.cov_params().loc[lead_terms, lead_terms].to_numpy(dtype=float)
+    if np.linalg.matrix_rank(lead_covariance) != len(lead_terms):
+        raise ValueError("pre-treatment covariance matrix is rank deficient")
+    statistic = float(lead_effects @ np.linalg.solve(lead_covariance, lead_effects))
+    try:
+        from scipy.stats import chi2
+    except ImportError as exc:  # pragma: no cover - installed by the causal extra
+        raise RuntimeError(
+            "causal analysis requires the optional dependency group: pip install '.[causal]'"
+        ) from exc
+    p_value = float(chi2.sf(statistic, len(lead_terms)))
+    parallel = {
+        "statistic": statistic,
+        "degrees_of_freedom": len(lead_terms),
+        "p_value": p_value,
+        "lead_terms": len(lead_terms),
+        "alpha": float(config.alpha),
+        "passed": bool(p_value >= config.alpha),
+    }
+    return event, parallel
+
+
+def estimate_placebo(
+    frame: pd.DataFrame, config: CausalConfig
+) -> tuple[pd.DataFrame, dict[str, object]]:
+    """Estimate a fake rollout using only observations before the real rollout."""
+
+    integrity = validate_market_panel(frame, config)
+    placebo_frame = frame.loc[frame[config.time_column] < config.rollout_week].copy()
+    term = "placebo_policy_active"
+    placebo_frame[term] = placebo_frame[config.group_column].astype(int) * (
+        placebo_frame[config.time_column] >= config.placebo_week
+    ).astype(int)
+    if placebo_frame[term].nunique() != 2:
+        raise ValueError("placebo window does not identify a fake rollout effect")
+
+    result = _fit_fixed_effect_model(placebo_frame, config, (term,))
+    interval = result.conf_int(alpha=config.alpha).loc[term]
+    row = {
+        "term": term,
+        "effect": float(result.params[term]),
+        "standard_error": float(result.bse[term]),
+        "statistic": float(result.tvalues[term]),
+        "p_value": float(result.pvalues[term]),
+        "ci_lower": float(interval.iloc[0]),
+        "ci_upper": float(interval.iloc[1]),
+        "alpha": float(config.alpha),
+        "treated_markets": int(integrity["treated_markets"]),
+        "control_markets": int(integrity["control_markets"]),
+        "clusters": int(integrity["markets"]),
+        "observations": len(placebo_frame),
+        "total_exposure": int(placebo_frame[config.exposure_column].sum()),
+        "weighting": config.exposure_column,
+        "covariance": f"cluster:{config.unit_column}",
+    }
+    estimate = pd.DataFrame([row], columns=_ESTIMATE_COLUMNS)
+    contains_zero = bool(row["ci_lower"] <= 0 <= row["ci_upper"])
+    diagnostics = {
+        "alpha": float(config.alpha),
+        "ci_contains_zero": contains_zero,
+        "placebo_week": int(config.placebo_week),
+        "passed": contains_zero,
+    }
+    return estimate, diagnostics
+
+
+def summarize_preperiod_balance(frame: pd.DataFrame, config: CausalConfig) -> pd.DataFrame:
+    """Compare treated and control markets using pre-period market-level means."""
+
+    validate_market_panel(frame, config)
+    preperiod = frame.loc[frame[config.time_column] < config.rollout_week]
+    market_means = (
+        preperiod.groupby(config.unit_column, sort=True)
+        .agg(
+            {
+                config.group_column: "first",
+                **{column: "mean" for column in config.balance_columns},
+            }
+        )
+        .reset_index()
+    )
+    treated = market_means.loc[market_means[config.group_column] == 1]
+    control = market_means.loc[market_means[config.group_column] == 0]
+    rows = []
+    for metric in config.balance_columns:
+        treated_values = treated[metric].to_numpy(dtype=float)
+        control_values = control[metric].to_numpy(dtype=float)
+        treated_mean = float(treated_values.mean())
+        control_mean = float(control_values.mean())
+        pooled_variance = (
+            float(treated_values.var(ddof=1)) + float(control_values.var(ddof=1))
+        ) / 2
+        denominator = math.sqrt(pooled_variance)
+        if denominator == 0:
+            standardized_difference = 0.0 if treated_mean == control_mean else math.inf
+        else:
+            standardized_difference = (treated_mean - control_mean) / denominator
+        if not math.isfinite(standardized_difference):
+            raise ValueError(f"balance metric {metric} has zero pooled variance")
+        rows.append(
+            {
+                "metric": metric,
+                "treated_mean": treated_mean,
+                "control_mean": control_mean,
+                "standardized_mean_difference": float(standardized_difference),
+                "absolute_standardized_mean_difference": abs(float(standardized_difference)),
+                "treated_markets": len(treated_values),
+                "control_markets": len(control_values),
+            }
+        )
+    return pd.DataFrame(
+        rows,
+        columns=[
+            "metric",
+            "treated_mean",
+            "control_mean",
+            "standardized_mean_difference",
+            "absolute_standardized_mean_difference",
+            "treated_markets",
+            "control_markets",
+        ],
+    )
+
+
+def translate_business_impact(did_estimate: pd.DataFrame, config: CausalConfig) -> pd.DataFrame:
+    """Translate an absolute CTR effect into clicks at a declared exposure scale."""
+
+    required = {"effect", "ci_lower", "ci_upper"}
+    missing = sorted(required - set(did_estimate.columns))
+    if missing or len(did_estimate) != 1:
+        detail = f"; missing columns: {', '.join(missing)}" if missing else ""
+        raise ValueError(f"DiD estimate must contain exactly one complete row{detail}")
+    row = did_estimate.iloc[0]
+    values = np.array([row["effect"], row["ci_lower"], row["ci_upper"]], dtype=float)
+    if not np.isfinite(values).all():
+        raise ValueError("DiD estimate contains non-finite impact values")
+    scale = config.business_exposure_scale
+    return pd.DataFrame(
+        [
+            {
+                "scale_exposures": scale,
+                "incremental_clicks": float(row["effect"] * scale),
+                "ci_lower_clicks": float(row["ci_lower"] * scale),
+                "ci_upper_clicks": float(row["ci_upper"] * scale),
+            }
+        ],
+        columns=[
+            "scale_exposures",
+            "incremental_clicks",
+            "ci_lower_clicks",
+            "ci_upper_clicks",
+        ],
+    )
+
+
+def analyze_causal_frame(frame: pd.DataFrame, config: CausalConfig) -> CausalAnalysis:
+    """Run all declared estimators against one structurally validated panel."""
+
+    integrity = validate_market_panel(frame, config)
+    did_estimate = fit_difference_in_differences(frame, config)
+    event_study, parallel_trends = estimate_event_study(frame, config)
+    placebo_estimate, placebo = estimate_placebo(frame, config)
+    balance = summarize_preperiod_balance(frame, config)
+    business_impact = translate_business_impact(did_estimate, config)
+    return CausalAnalysis(
+        did_estimate=did_estimate,
+        event_study=event_study,
+        placebo_estimate=placebo_estimate,
+        balance=balance,
+        business_impact=business_impact,
+        diagnostics={
+            "integrity": integrity,
+            "parallel_trends": parallel_trends,
+            "placebo": placebo,
+        },
+    )
