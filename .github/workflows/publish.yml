@@ -97,3 +97,61 @@ jobs:
           PY
       - run: grep -q "synthetic-rct" artifacts/experiment-ci/decision_report.md
       - run: grep -qi "not production lift" artifacts/experiment-ci/decision_report.md
+
+  causal-extra:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[dev,causal]"
+      - name: Test causal analysis and public commands
+        run: |
+          python -m pytest \
+            tests/test_causal.py \
+            tests/test_causal_reporting.py \
+            tests/test_causal_visualization.py \
+            tests/test_causal_workflow.py \
+            tests/test_cli.py -q
+      - run: news-ctr make-quasi-experiment --output data/ci-market-panel.parquet --seed 42 --markets 60 --pre-weeks 20 --post-weeks 12
+      - run: news-ctr causal-impact --input data/ci-market-panel.parquet --output artifacts/causal-ci --config configs/causal-impact-v4.json
+      - name: Verify complete and reproducible causal evidence
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from PIL import Image
+          from news_ctr.causal_workflow import CAUSAL_ARTIFACTS
+
+          committed_root = Path("artifacts/causal-impact-v4")
+          regenerated_root = Path("artifacts/causal-ci")
+          assert tuple(sorted(path.name for path in committed_root.iterdir())) == CAUSAL_ARTIFACTS
+          assert tuple(sorted(path.name for path in regenerated_root.iterdir())) == CAUSAL_ARTIFACTS
+          for name in CAUSAL_ARTIFACTS:
+              committed = committed_root / name
+              regenerated = regenerated_root / name
+              if committed.suffix == ".png":
+                  with Image.open(committed) as expected, Image.open(regenerated) as actual:
+                      expected.verify()
+                      actual.verify()
+                  with Image.open(committed) as expected, Image.open(regenerated) as actual:
+                      assert expected.size == actual.size, name
+                      assert expected.mode == actual.mode, name
+                      assert expected.info["Description"] == actual.info["Description"]
+                      assert expected.getbbox() is not None, name
+                      assert actual.getbbox() is not None, name
+                      expected_colors = expected.convert("RGB").getcolors(
+                          maxcolors=expected.width * expected.height
+                      )
+                      actual_colors = actual.convert("RGB").getcolors(
+                          maxcolors=actual.width * actual.height
+                      )
+                      assert expected_colors is not None and len(expected_colors) > 1
+                      assert actual_colors is not None and len(actual_colors) > 1
+              else:
+                  assert committed.read_bytes() == regenerated.read_bytes(), name
+          PY
+      - run: grep -q "synthetic-quasi-experiment" artifacts/causal-ci/causal_report.md
+      - run: grep -qi "not production lift" artifacts/causal-ci/causal_report.md
