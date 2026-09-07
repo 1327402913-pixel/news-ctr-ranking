@@ -127,6 +127,40 @@ def test_causal_config_rejects_unknown_fields(tmp_path: Path) -> None:
         CausalConfig.from_json(_write_config(tmp_path / "invalid.json", payload))
 
 
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("rollout_week", 0.5, "rollout_week must be an integer"),
+        ("rollout_week", "0", "rollout_week must be an integer"),
+        ("rollout_week", True, "rollout_week must be an integer"),
+        ("minimum_markets", 20.0, "minimum_markets must be an integer"),
+        ("alpha", "0.05", "alpha must be a finite number"),
+        ("alpha", True, "alpha must be a finite number"),
+        ("alpha", float("nan"), "alpha must be a finite number"),
+        ("maximum_missing_market_week_share", float("inf"), "finite number"),
+        ("active_column", 123, "active_column must be a string"),
+        ("balance_columns", "ctr", "balance_columns must be an array"),
+        ("balance_columns", ["ctr", 1], "balance_columns entries must be strings"),
+        ("event_window", "-12,8", "event_window must be an array"),
+        ("event_window", [-12.0, 8], "event_window entries must be integers"),
+        ("practical_threshold", 0, "practical_threshold must be positive"),
+    ],
+)
+def test_causal_config_rejects_coercive_or_non_finite_json_values(
+    tmp_path: Path,
+    field: str,
+    value: object,
+    message: str,
+) -> None:
+    """Catches the published config bytes disagreeing with normalized estimator inputs."""
+
+    payload = _valid_payload()
+    payload[field] = value
+
+    with pytest.raises(ValueError, match=message):
+        CausalConfig.from_json(_write_config(tmp_path / "invalid-type.json", payload))
+
+
 def test_market_panel_validation_returns_a_json_safe_integrity_summary(
     panel: pd.DataFrame, config: CausalConfig
 ) -> None:

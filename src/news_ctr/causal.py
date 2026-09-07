@@ -52,6 +52,62 @@ _CONFIG_FIELDS = {
     "time_column",
     "unit_column",
 }
+_STRING_CONFIG_FIELDS = {
+    "active_column",
+    "click_column",
+    "exposure_column",
+    "group_column",
+    "outcome_column",
+    "outcome_kind",
+    "time_column",
+    "unit_column",
+}
+_INTEGER_CONFIG_FIELDS = {
+    "business_exposure_scale",
+    "minimum_control_markets",
+    "minimum_markets",
+    "minimum_post_weeks",
+    "minimum_pre_weeks",
+    "minimum_treated_markets",
+    "placebo_week",
+    "reference_week",
+    "rollout_week",
+}
+_NUMBER_CONFIG_FIELDS = {
+    "alpha",
+    "maximum_missing_market_week_share",
+    "practical_threshold",
+}
+
+
+def _validate_raw_config_types(payload: dict[str, object]) -> None:
+    """Reject JSON values that would change meaning through Python coercion."""
+
+    for field in sorted(_STRING_CONFIG_FIELDS):
+        if not isinstance(payload[field], str):
+            raise ValueError(f"{field} must be a string")
+    for field in sorted(_INTEGER_CONFIG_FIELDS):
+        value = payload[field]
+        if not isinstance(value, int) or isinstance(value, bool):
+            raise ValueError(f"{field} must be an integer")
+    for field in sorted(_NUMBER_CONFIG_FIELDS):
+        value = payload[field]
+        if (
+            not isinstance(value, (int, float))
+            or isinstance(value, bool)
+            or not math.isfinite(value)
+        ):
+            raise ValueError(f"{field} must be a finite number")
+    balance_columns = payload["balance_columns"]
+    if not isinstance(balance_columns, list):
+        raise ValueError("balance_columns must be an array")
+    if any(not isinstance(value, str) for value in balance_columns):
+        raise ValueError("balance_columns entries must be strings")
+    event_window = payload["event_window"]
+    if not isinstance(event_window, list):
+        raise ValueError("event_window must be an array")
+    if any(not isinstance(value, int) or isinstance(value, bool) for value in event_window):
+        raise ValueError("event_window entries must be integers")
 
 
 @dataclass(frozen=True)
@@ -94,36 +150,31 @@ class CausalConfig:
             raise ValueError(f"unknown config fields: {', '.join(unknown)}")
         if missing:
             raise ValueError(f"missing config fields: {', '.join(missing)}")
-        try:
-            event_window = tuple(int(value) for value in payload["event_window"])
-            config = cls(
-                unit_column=str(payload["unit_column"]),
-                time_column=str(payload["time_column"]),
-                group_column=str(payload["group_column"]),
-                active_column=str(payload["active_column"]),
-                exposure_column=str(payload["exposure_column"]),
-                click_column=str(payload["click_column"]),
-                outcome_column=str(payload["outcome_column"]),
-                outcome_kind=str(payload["outcome_kind"]),
-                balance_columns=tuple(str(value) for value in payload["balance_columns"]),
-                rollout_week=int(payload["rollout_week"]),
-                reference_week=int(payload["reference_week"]),
-                event_window=event_window,
-                placebo_week=int(payload["placebo_week"]),
-                alpha=float(payload["alpha"]),
-                practical_threshold=float(payload["practical_threshold"]),
-                minimum_markets=int(payload["minimum_markets"]),
-                minimum_treated_markets=int(payload["minimum_treated_markets"]),
-                minimum_control_markets=int(payload["minimum_control_markets"]),
-                minimum_pre_weeks=int(payload["minimum_pre_weeks"]),
-                minimum_post_weeks=int(payload["minimum_post_weeks"]),
-                maximum_missing_market_week_share=float(
-                    payload["maximum_missing_market_week_share"]
-                ),
-                business_exposure_scale=int(payload["business_exposure_scale"]),
-            )
-        except (TypeError, ValueError) as exc:
-            raise ValueError("causal config contains an invalid value type") from exc
+        _validate_raw_config_types(payload)
+        config = cls(
+            unit_column=payload["unit_column"],
+            time_column=payload["time_column"],
+            group_column=payload["group_column"],
+            active_column=payload["active_column"],
+            exposure_column=payload["exposure_column"],
+            click_column=payload["click_column"],
+            outcome_column=payload["outcome_column"],
+            outcome_kind=payload["outcome_kind"],
+            balance_columns=tuple(payload["balance_columns"]),
+            rollout_week=payload["rollout_week"],
+            reference_week=payload["reference_week"],
+            event_window=tuple(payload["event_window"]),
+            placebo_week=payload["placebo_week"],
+            alpha=float(payload["alpha"]),
+            practical_threshold=float(payload["practical_threshold"]),
+            minimum_markets=payload["minimum_markets"],
+            minimum_treated_markets=payload["minimum_treated_markets"],
+            minimum_control_markets=payload["minimum_control_markets"],
+            minimum_pre_weeks=payload["minimum_pre_weeks"],
+            minimum_post_weeks=payload["minimum_post_weeks"],
+            maximum_missing_market_week_share=float(payload["maximum_missing_market_week_share"]),
+            business_exposure_scale=payload["business_exposure_scale"],
+        )
         validate_causal_config(config)
         return config
 
@@ -156,16 +207,18 @@ def validate_causal_config(config: CausalConfig) -> None:
         raise ValueError("configured column names must not be empty")
     if len(set(named_columns)) != len(named_columns):
         raise ValueError("configured role columns must be unique")
-    if not config.balance_columns or len(set(config.balance_columns)) != len(
-        config.balance_columns
+    if (
+        not config.balance_columns
+        or any(not column for column in config.balance_columns)
+        or len(set(config.balance_columns)) != len(config.balance_columns)
     ):
         raise ValueError("balance_columns must be non-empty and unique")
     if config.outcome_kind != "rate":
         raise ValueError("outcome_kind must be rate")
-    if not 0 < config.alpha < 1:
+    if not math.isfinite(config.alpha) or not 0 < config.alpha < 1:
         raise ValueError("alpha must be between zero and one")
-    if config.practical_threshold < 0:
-        raise ValueError("practical_threshold must not be negative")
+    if not math.isfinite(config.practical_threshold) or config.practical_threshold <= 0:
+        raise ValueError("practical_threshold must be positive")
     if config.business_exposure_scale <= 0:
         raise ValueError("business_exposure_scale must be positive")
     if config.minimum_markets < 4:
@@ -180,7 +233,9 @@ def validate_causal_config(config: CausalConfig) -> None:
         raise ValueError("minimum_pre_weeks must be at least two")
     if config.minimum_post_weeks < 2:
         raise ValueError("minimum_post_weeks must be at least two")
-    if not 0 <= config.maximum_missing_market_week_share < 1:
+    if not math.isfinite(config.maximum_missing_market_week_share) or not (
+        0 <= config.maximum_missing_market_week_share < 1
+    ):
         raise ValueError("maximum missing market-week share must be between zero and one")
     if len(config.event_window) != 2:
         raise ValueError("event_window must contain exactly two weeks")
