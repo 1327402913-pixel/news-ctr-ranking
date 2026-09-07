@@ -1,7 +1,7 @@
 from pathlib import Path
 
 
-def test_ci_checks_png_semantics_without_cross_platform_byte_claim() -> None:
+def test_ci_checks_computed_artifacts_with_cross_platform_semantics() -> None:
     workflow = Path(".github/workflows/publish.yml").read_text(encoding="utf-8")
 
     assert 'if committed.suffix == ".png":' in workflow
@@ -9,6 +9,13 @@ def test_ci_checks_png_semantics_without_cross_platform_byte_claim() -> None:
     assert 'expected.info["Description"] == actual.info["Description"]' in workflow
     assert "expected.getbbox() is not None" in workflow
     assert "actual.getbbox() is not None" in workflow
+    assert 'elif committed.suffix == ".csv":' in workflow
+    assert "pd.testing.assert_frame_equal(" in workflow
+    assert "check_exact=False" in workflow
+    assert "rtol=1e-7" in workflow
+    assert "atol=1e-7" in workflow
+    assert 'elif name == "diagnostics.json":' in workflow
+    assert "assert_nested_close(expected, actual)" in workflow
     assert "committed.read_bytes() == regenerated.read_bytes()" in workflow
 
 

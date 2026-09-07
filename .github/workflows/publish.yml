@@ -121,9 +121,31 @@ jobs:
       - name: Verify complete and reproducible causal evidence
         run: |
           python - <<'PY'
+          import json
+          import math
           from pathlib import Path
+
+          import pandas as pd
           from PIL import Image
           from news_ctr.causal_workflow import CAUSAL_ARTIFACTS
+
+
+          def assert_nested_close(expected, actual):
+              if isinstance(expected, dict):
+                  assert isinstance(actual, dict)
+                  assert expected.keys() == actual.keys()
+                  for key in expected:
+                      assert_nested_close(expected[key], actual[key])
+              elif isinstance(expected, list):
+                  assert isinstance(actual, list)
+                  assert len(expected) == len(actual)
+                  for expected_item, actual_item in zip(expected, actual, strict=True):
+                      assert_nested_close(expected_item, actual_item)
+              elif isinstance(expected, float):
+                  assert isinstance(actual, float)
+                  assert math.isclose(expected, actual, rel_tol=1e-7, abs_tol=1e-7)
+              else:
+                  assert expected == actual
 
           committed_root = Path("artifacts/causal-impact-v4")
           regenerated_root = Path("artifacts/causal-ci")
@@ -150,6 +172,18 @@ jobs:
                       )
                       assert expected_colors is not None and len(expected_colors) > 1
                       assert actual_colors is not None and len(actual_colors) > 1
+              elif committed.suffix == ".csv":
+                  pd.testing.assert_frame_equal(
+                      pd.read_csv(committed),
+                      pd.read_csv(regenerated),
+                      check_exact=False,
+                      rtol=1e-7,
+                      atol=1e-7,
+                  )
+              elif name == "diagnostics.json":
+                  expected = json.loads(committed.read_text(encoding="utf-8"))
+                  actual = json.loads(regenerated.read_text(encoding="utf-8"))
+                  assert_nested_close(expected, actual)
               else:
                   assert committed.read_bytes() == regenerated.read_bytes(), name
           PY
