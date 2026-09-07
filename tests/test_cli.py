@@ -271,3 +271,93 @@ def test_decision_science_cli_end_to_end(tmp_path: Path, capsys) -> None:
     )
     assert (study / "decision_report.md").is_file()
     assert (study / "effects.png").is_file()
+
+
+def test_causal_impact_cli_generates_and_analyzes_quasi_evidence(tmp_path: Path, capsys) -> None:
+    """Catches the causal workflow working only through private Python calls."""
+
+    pytest.importorskip("statsmodels")
+    pytest.importorskip("matplotlib")
+    panel = tmp_path / "market-week.parquet"
+    output = tmp_path / "causal-study"
+    config = Path(__file__).parents[1] / "configs" / "causal-impact-v4.json"
+
+    assert (
+        main(
+            [
+                "make-quasi-experiment",
+                "--output",
+                str(panel),
+                "--seed",
+                "42",
+                "--markets",
+                "60",
+                "--pre-weeks",
+                "20",
+                "--post-weeks",
+                "12",
+            ]
+        )
+        == 0
+    )
+    generated = json.loads(capsys.readouterr().out.strip())
+    assert generated == {
+        "evidence_tier": "synthetic-quasi-experiment",
+        "output": str(panel),
+    }
+    assert (
+        main(
+            [
+                "causal-impact",
+                "--input",
+                str(panel),
+                "--output",
+                str(output),
+                "--config",
+                str(config),
+            ]
+        )
+        == 0
+    )
+    analyzed = json.loads(capsys.readouterr().out.strip())
+    assert analyzed == {"output": str(output)}
+    assert (output / "causal_report.md").is_file()
+    assert (output / "event_study.png").is_file()
+    assert (output / "run_manifest.json").is_file()
+
+    assert main(["make-quasi-experiment", "--output", str(panel)]) == 2
+    assert (
+        main(
+            [
+                "causal-impact",
+                "--input",
+                str(panel),
+                "--output",
+                str(output),
+                "--config",
+                str(config),
+            ]
+        )
+        == 2
+    )
+    assert "error:" in capsys.readouterr().err
+
+
+def test_quasi_experiment_cli_rejects_invalid_dimensions(tmp_path: Path, capsys) -> None:
+    """Catches invalid causal fixtures escaping as unhandled tracebacks."""
+
+    code = main(
+        [
+            "make-quasi-experiment",
+            "--output",
+            str(tmp_path / "invalid.parquet"),
+            "--markets",
+            "5",
+        ]
+    )
+
+    assert code == 2
+    captured = capsys.readouterr()
+    assert "error:" in captured.err
+    assert "markets must be even" in captured.err
+    assert "Traceback" not in captured.err

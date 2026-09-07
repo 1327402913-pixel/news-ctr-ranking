@@ -1,10 +1,13 @@
-.PHONY: setup setup-decision test lint smoke benchmark benchmark-ranking analytics experiment portfolio-v3 build clean
+.PHONY: setup setup-decision setup-causal test lint smoke benchmark benchmark-ranking analytics experiment causal-impact-v4 portfolio-v3 build clean
 
 setup:
 	python -m pip install -e ".[dev]"
 
 setup-decision:
 	python -m pip install -e ".[dev,decision]"
+
+setup-causal:
+	python -m pip install -e ".[dev,causal]"
 
 test:
 	python -m pytest -q
@@ -38,6 +41,12 @@ experiment:
 	news-ctr make-experiment --output "$(EXPERIMENT_INPUT)" --seed 42 --users 20000
 	news-ctr experiment --input "$(EXPERIMENT_INPUT)" --output "$(EXPERIMENT_OUTPUT)" --config configs/experiment-v3.json
 
+causal-impact-v4:
+	@test ! -e "$(CAUSAL_INPUT)" || (echo "input exists: $(CAUSAL_INPUT); choose CAUSAL_INPUT=..."; exit 2)
+	@test ! -e "$(CAUSAL_OUTPUT)" || (echo "output exists: $(CAUSAL_OUTPUT); choose CAUSAL_OUTPUT=..."; exit 2)
+	news-ctr make-quasi-experiment --output "$(CAUSAL_INPUT)" --seed 42 --markets 60 --pre-weeks 20 --post-weeks 12
+	news-ctr causal-impact --input "$(CAUSAL_INPUT)" --output "$(CAUSAL_OUTPUT)" --config configs/causal-impact-v4.json
+
 portfolio-v3:
 	@test ! -e "$(PORTFOLIO_V3_OUTPUT)" || (echo "output exists: $(PORTFOLIO_V3_OUTPUT); choose PORTFOLIO_V3_OUTPUT=..."; exit 2)
 	$(MAKE) analytics
@@ -56,4 +65,6 @@ ANALYTICS_DATA ?= data/analytics-v3
 ANALYTICS_OUTPUT ?= artifacts/analytics-v3
 EXPERIMENT_INPUT ?= data/synthetic-rct-v3.parquet
 EXPERIMENT_OUTPUT ?= artifacts/experiment-v3
+CAUSAL_INPUT ?= data/synthetic-market-panel-v4.parquet
+CAUSAL_OUTPUT ?= artifacts/causal-impact-v4-regenerated
 PORTFOLIO_V3_OUTPUT ?= artifacts/portfolio-v3-regenerated

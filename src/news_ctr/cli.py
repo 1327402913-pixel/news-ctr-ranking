@@ -120,6 +120,26 @@ def build_parser() -> argparse.ArgumentParser:
     experiment.add_argument("--output", type=Path, required=True)
     experiment.add_argument("--config", type=Path, required=True)
     experiment.set_defaults(handler=_experiment)
+
+    make_quasi_experiment = subparsers.add_parser(
+        "make-quasi-experiment",
+        help="create a deterministic market-week quasi-experiment fixture",
+    )
+    make_quasi_experiment.add_argument("--output", type=Path, required=True)
+    make_quasi_experiment.add_argument("--seed", type=int, default=42)
+    make_quasi_experiment.add_argument("--markets", type=int, default=60)
+    make_quasi_experiment.add_argument("--pre-weeks", type=int, default=20)
+    make_quasi_experiment.add_argument("--post-weeks", type=int, default=12)
+    make_quasi_experiment.set_defaults(handler=_make_quasi_experiment)
+
+    causal_impact = subparsers.add_parser(
+        "causal-impact",
+        help="analyze a market rollout with quasi-experimental diagnostics",
+    )
+    causal_impact.add_argument("--input", type=Path, required=True)
+    causal_impact.add_argument("--output", type=Path, required=True)
+    causal_impact.add_argument("--config", type=Path, required=True)
+    causal_impact.set_defaults(handler=_causal_impact)
     return parser
 
 
@@ -260,6 +280,36 @@ def _experiment(args: argparse.Namespace) -> int:
     from news_ctr.experiments import run_experiment
 
     output = run_experiment(args.input, args.output, args.config)
+    print(json.dumps({"output": str(output)}, sort_keys=True))
+    return 0
+
+
+def _make_quasi_experiment(args: argparse.Namespace) -> int:
+    from news_ctr.quasi_data import write_synthetic_market_panel
+
+    output = write_synthetic_market_panel(
+        args.output,
+        seed=args.seed,
+        markets=args.markets,
+        pre_weeks=args.pre_weeks,
+        post_weeks=args.post_weeks,
+    )
+    print(
+        json.dumps(
+            {
+                "evidence_tier": "synthetic-quasi-experiment",
+                "output": str(output),
+            },
+            sort_keys=True,
+        )
+    )
+    return 0
+
+
+def _causal_impact(args: argparse.Namespace) -> int:
+    from news_ctr.causal_workflow import run_causal_impact
+
+    output = run_causal_impact(args.input, args.output, args.config)
     print(json.dumps({"output": str(output)}, sort_keys=True))
     return 0
 
